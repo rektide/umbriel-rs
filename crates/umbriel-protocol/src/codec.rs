@@ -1,7 +1,10 @@
 //! Reusable contiguous framing storage and checked Sonic serialization.
 use std::io::{self, Write};
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, Visitor},
+};
 use thiserror::Error;
 
 use crate::REQUEST_LIMIT;
@@ -126,7 +129,53 @@ pub fn decode<'a, T: Deserialize<'a>>(frame: &'a [u8]) -> sonic_rs::Result<T> {
     // Validate first: Sonic's lazy-value path can inspect strings before its
     // final UTF-8 check (and panic in debug builds on invalid string bytes).
     let text = std::str::from_utf8(frame).map_err(serde::de::Error::custom)?;
+    // LazyValue/ignored-field scanning checks syntax but does not decode every
+    // string escape. Discard-only visitors validate syntax and all strings
+    // (including surrogate pairs), without constructing a JSON tree. Validation
+    // precedes caller-selected deserialization.
+    sonic_rs::from_str::<de::IgnoredAny>(text)?;
+    validate_strings(text)?;
     sonic_rs::from_str(text)
+}
+
+// Syntax is already checked by Sonic. Locate complete string tokens, skipping
+// escaped characters, and ask Sonic to decode them with a discard-only visitor.
+// Unlike deserialize_any on all values, this does not constrain JSON numbers to
+// f64/u64/i64 ranges merely to validate a lazy payload.
+fn validate_strings(text: &str) -> sonic_rs::Result<()> {
+    let bytes = text.as_bytes();
+    let mut cursor = 0;
+    while let Some(offset) = memchr::memchr(b'"', &bytes[cursor..]) {
+        let start = cursor + offset;
+        cursor = start + 1;
+        while let Some(offset) = memchr::memchr2(b'"', b'\\', &bytes[cursor..]) {
+            cursor += offset;
+            if bytes[cursor] == b'"' {
+                cursor += 1;
+                sonic_rs::from_str::<CheckedKey>(&text[start..cursor])?;
+                break;
+            }
+            cursor += 2; // Syntax validation guarantees an escaped byte follows.
+        }
+    }
+    Ok(())
+}
+
+struct CheckedKey;
+impl<'de> Deserialize<'de> for CheckedKey {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct CheckKey;
+        impl Visitor<'_> for CheckKey {
+            type Value = CheckedKey;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a JSON object key")
+            }
+            fn visit_str<E: de::Error>(self, _: &str) -> Result<CheckedKey, E> {
+                Ok(CheckedKey)
+            }
+        }
+        d.deserialize_string(CheckKey)
+    }
 }
 
 #[derive(Debug, Error)]
