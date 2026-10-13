@@ -24,6 +24,10 @@ sources:
 
 # Assessment brief
 
+**Returned:** [Astra-medium assessment](reuse0.gpt6a.md), reviewed and linked
+from the [current architecture](../architecture/architecture1.gpt6a.md). This
+brief preserves the commission and the baseline supplied before dispatch.
+
 ## Commission and readiness
 
 The user requests **one Astra medium assessment, reading

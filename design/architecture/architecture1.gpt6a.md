@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
-    title: Human selection of Sonic, whole-protocol scope, multiple crates, comparative assessment, and Arrow/Polars direction
+    title: Human-selected Sonic and multi-crate direction, protocol review, and integration of the tmux/Kubeless assessment
   - resource: architecture0.gpt6a.md
     title: Predecessor sans-I/O boundaries and the focused active-window example
   - resource: ../performance/json0.gpt6a.md
@@ -20,6 +20,12 @@ sources:
     title: Returned protocol catalog and sequential subscriber-reuse evidence
   - resource: ../protocol/review0.gpt6a.md
     title: Source-reviewed size accounting, empty subscription response, and dedup qualifications
+  - resource: ../assessment/reuse0.gpt6a.md
+    title: Astra-medium assessment of tmux ownership, Kubeless views, and verified columnar API boundaries
+  - resource: file:///home/rektide/src/kubeless/view/memory/src/lib.rs
+    title: Parent checked atomic replacement, opaque local generation, shared row handles, and coherent snapshot implementation
+  - resource: file:///home/rektide/src/tmux-interface-control/doc/library/ordering.md
+    title: Parent checked cancellation and correlation-retirement ownership laws
 ---
 
 # Sonic-first architecture for the whole Umbriel protocol
@@ -59,23 +65,52 @@ executor, a wall clock, or a timer. That is the useful sans-I/O boundary here.
 
 | Crate | Owns | Dependencies flow toward |
 |---|---|---|
-| `umbriel-protocol` | Framing, Sonic wire envelopes, query/action grammar, payload models, runtime-free protocol session mechanics | Sonic, Serde, small codec utilities |
-| `umbriel-client` | Unix discovery/I/O, request and subscription drivers, runtime integration | Protocol |
-| `umbriel-state` | Optional materialized snapshots, identities, continuity/initialization, consumer-derived views | Protocol; client integration kept at an adapter boundary |
-| `umbriel-arrow` | Optional column schemas and owned record-batch emission | Protocol/state and the selected Arrow representation |
+| `umbriel-protocol` | Framing, Sonic wire envelopes, query/action grammar, payload models | Sonic, Serde, small codec utilities |
+| `umbriel-session` | Sans-I/O role state, one reply slot, write progress, routing and terminal effects | Protocol |
+| `umbriel-client` | Unix discovery/I/O, request and subscription drivers, independent bounded delivery, runtime integration | Protocol + session |
+| `umbriel-state` | Optional family snapshots, identities, continuity/readiness, consumer-derived views | Protocol/session metadata + a Kubeless view adapter |
+| `umbriel-arrow` | Optional column schemas and owned record-batch emission, direct from snapshots | Protocol + explicitly selected Arrow representation |
+| `umbriel-polars` | Optional finite lazy-query execution over columnar snapshots | Arrow emitter + matching Polars |
 
 These are responsibility boundaries, not a requirement to create empty crates
-before each has code. A later `umbriel-polars` crate or a feature of the columnar
-crate can provide lazy query integration, depending on actual Arrow/Polars API
-compatibility. Neither Polars nor an executor belongs in `umbriel-protocol`.
+before each has code. The separate Polars package keeps the query engine out of
+the simpler batch emitter. Neither Polars nor an executor belongs in
+`umbriel-protocol`.
 The initial codec/envelope implementation can land together in the protocol
 crate while the assessment informs state/driver boundaries.
 
-The user commissioned an Astra-medium assessment of **tmux-interface-control
-first, kubeless second** after this protocol/design baseline exists. The goal
-is to discover reusable subscription, observation, control, and reconciliation
-abstractions rather than rebuilding them independently. Crate names and exact
-ownership above are proposals for that assessment to challenge.
+The commissioned Astra-medium assessment read **tmux-interface-control first,
+kubeless second** after the protocol/design baseline was committed. Its
+[returned assessment](../assessment/reuse0.gpt6a.md) motivated the explicit
+session crate and direct columnar path above. The parent read the complete
+assessment and checked consequential source seams before incorporating them.
+
+### Reuse decisions guiding the next slices
+
+- Use tmux's **ownership laws**: a sent request retains reply ownership after
+  waiter cancellation until the reply drains or the connection closes. Transfer
+  its bounded independent-observer contract. Umbriel's own single-slot session
+  remains much smaller than tmux's fence-based correlation engine.
+- Evaluate **`kubeless-view-memory`** through a family-snapshot adapter for
+  materialized inventories. It already supplies atomic whole-map replacement
+  and coherent reads without Kubernetes/resource traits or an async runtime.
+  `kubeless-view` is an option when sole-writer closure/readiness is useful.
+  These are concrete dependency candidates pending an integration proof.
+- Keep **one replacement map per complete family scope**. Installing windows
+  into a shared all-family map would incorrectly erase workspaces. Preserve
+  separate family metadata and represent a known empty snapshot explicitly.
+- Preserve **independent bounded delivery** on the receive path. Kubeless's
+  blocking publication is useful for deliberately backpressured downstream
+  work, but awaiting it inline could stall all socket input and command replies.
+- Keep direct **snapshot-to-columns** available without an inventory store.
+  Polars-native Arrow batches are the leading representation for the user's
+  Polars-oriented path; explicitly verify and name that Rust type boundary.
+
+Kubeless's extra packages are currently unpublished in the inspected workspace.
+Choose a reviewed repository pin/dependency arrangement when implementing the
+adapter. Reuse carries real costs: owned keys, shared row handles, locks,
+replacement work, and optional retained before/after evidence. A direct borrowed
+consumer should pay none of those materializer costs.
 
 ## Typed convenience and borrowed control
 
@@ -230,6 +265,12 @@ subscribed command channel. Do not count event or blank initial frames as replie
 Multiple independent one-shot requests can use separate connections if the
 application wants concurrency; bound that concurrency at the adapter layer.
 
+Distinguish the caller's wait from the outstanding wire slot. If a caller cancels
+or times out after any possible write, drain that command's eventual reply or
+retire the connection before admitting the next command. Releasing the slot
+when a future is dropped can assign its late reply to the wrong caller. An
+unsent queued request can be removed without this drain obligation.
+
 Expose command outcome uncertainty. If transport fails after sending an action,
 the library may not know whether it executed. Cancellation of a waiting Rust
 future does not undo an action. Automatic action retries would require an
@@ -305,10 +346,13 @@ borrowed event → projection → application. A materializer should be an optio
 subscriber, not compulsory storage through which every message passes.
 
 The desired columnar path is an Arrow emitter usable with **Polars 2.0 lazy
-frames**, in the user's terminology. The exact Rust Polars version and streaming
-API need verification before implementation. Do not assume a Python product
-version names a compatible Rust crate, or that Apache Arrow's `RecordBatch`
-and Polars' Arrow representation are the same Rust type.
+frames**, in the user's terminology. The assessment checked archived Rust
+Polars **0.55.1** and arrow-rs **59.2.0**, recording exact revisions. Polars's
+`RecordBatch` differs from Apache Arrow's Rust type. Its `collect_batches`
+returns a **blocking iterator of DataFrames**, even though the API is behind
+an `async` feature. A dedicated query execution boundary should own that work;
+the socket reader must remain free to drain. A matching-version compilation
+proof is the next step before shipping columnar integration.
 
 Candidate flow:
 
@@ -336,9 +380,12 @@ reuse, even when the initial Sonic parse borrows.
 
 Batch by actual snapshots or an explicit rows/bytes/latency policy. Keep this
 policy separate from the 750 ms stable-focus observation. Bound builder/output
-storage and define what lag means. The forthcoming assessment should evaluate
-whether kubeless already supplies useful observation/materialization boundaries
-and where a columnar sink can attach without forcing a control loop on readers.
+storage and define what lag means. The
+[completed assessment](../assessment/reuse0.gpt6a.md#arrow-and-polars-feasible-with-a-precise-rust-boundary)
+identifies both direct and materialized input paths. An external snapshot-batch
+envelope carries family, epoch, receive position, and complete-replacement
+meaning even for zero rows. Chunked snapshots need an explicit final-chunk
+boundary before replacing membership.
 
 ## Build order and verification
 
@@ -365,6 +412,8 @@ second scan. Revisit backends only if evidence presents a worthwhile problem.
 
 ## Cross-references
 
+- [Tmux/Kubeless assessment](../assessment/reuse0.gpt6a.md): concrete reuse seams,
+  session ownership laws, per-family materialization, and checked columnar APIs.
 - [Command research](../protocol/commands0.glm53m.md): protocol inventory and
   source-grounded constraints for the typed surface.
 - [JSON source research](../performance/json0.gpt6a.md): retained evidence about

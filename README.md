@@ -14,6 +14,8 @@ sources:
     title: Current library-wide architecture and human-selected direction
   - resource: design/assessment/brief0.gpt6a.md
     title: Commission for learning from tmux-interface-control followed by kubeless
+  - resource: design/assessment/reuse0.gpt6a.md
+    title: Completed Astra-medium assessment and reviewed reuse recommendations
 ---
 
 # umbriel-rs
@@ -39,9 +41,10 @@ performance has not yet been benchmarked.
 - [Current architecture](design/architecture/architecture1.gpt6a.md)
   — Sonic-first whole-protocol design, crate boundaries, subscriptions,
   materialized state, and the Arrow/Polars direction.
-- [Assessment brief](design/assessment/brief0.gpt6a.md)
-  — read tmux-interface-control first, then kubeless, to identify reusable
-  session, subscription, observation, and control mechanisms.
+- [Tmux/Kubeless assessment](design/assessment/reuse0.gpt6a.md)
+  — completed in that order; identifies Kubeless view reuse, tmux reply-ownership
+  laws, independent bounded delivery, and a concrete Arrow/Polars boundary.
+  The [assessment brief](design/assessment/brief0.gpt6a.md) records the commission.
 
 ## Supporting research
 
