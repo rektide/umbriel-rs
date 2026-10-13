@@ -110,6 +110,9 @@ Full detail in `commands0` + `review0`. The ones that bite:
 - `kubeless-view-memory` is the reuse candidate for state (per-family
   replacement maps); never block socket draining on downstream publication.
 - No automatic reconciliation/prune behavior; observation ≠ control.
+- **Columnar decided: Polars-native only**, no C Data Interface bridge (user
+  prefers no FFI), Utf8View strings everywhere, same-minor polars pins;
+  evidence in `design/columnar/arrow-polars0.glm53m.md`.
 
 ## Outstanding work
 
@@ -126,12 +129,17 @@ ran because that provider hit its 5-hour usage limit (resets 2026-10-13
 
 - **Polars**: latest published Rust crate is **0.55.2** (2026-08); the archived
   0.55.1 checkout is essentially current. **There is no Rust "2.0"** — that
-  number comes from the Python product side; pin `polars = "0.55"`. The real
-  issues: `polars_arrow`'s `RecordBatch` is a **different Rust type** from
-  Apache `arrow-array::RecordBatch` (build Polars-native, name it honestly);
+  number comes from the Python product side; pin `polars = "0.55"`. **Decided
+  (user acceptance 2026-10-13): Polars-native emitters only** — see
+  `design/columnar/arrow-polars0.glm53m.md`. Rules: `umbriel-arrow` depends on
+  standalone `polars-arrow` (no query engine); **Utf8View for every string
+  column** (Utf8/LargeUtf8 trigger a full copy into DataFrame); **no C Data
+  Interface bridge** (user prefers no FFI — Arrow IPC is the safe interop
+  fallback if an Apache consumer ever appears); `polars-arrow` and `polars`
+  pin the same minor (zero-copy `From` impl needs one crate instance).
   `collect_batches` is a **blocking** `Iterator<DataFrame>` behind the `async`
-  feature — run queries off the receive owner. Keep `umbriel-arrow` free of
-  Polars so version bumps stay confined to `umbriel-polars`.
+  feature — run queries off the receive owner. Runtime overhead versus
+  arrow-array is probe-verified zero, so the decision is cheap to revisit.
 - **kubeless is a fork of kube-rs/kube** (workspace metadata still points at
   `kube-rs/kube`; version bumped to 4.2.0). Name collisions verified on
   crates.io: `kubeless` itself is **taken** (unrelated 2018 Slowki crate), and

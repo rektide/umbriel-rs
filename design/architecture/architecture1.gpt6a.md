@@ -69,8 +69,8 @@ executor, a wall clock, or a timer. That is the useful sans-I/O boundary here.
 | `umbriel-session` | Sans-I/O role state, one reply slot, write progress, routing and terminal effects | Protocol |
 | `umbriel-client` | Unix discovery/I/O, request and subscription drivers, independent bounded delivery, runtime integration | Protocol + session |
 | `umbriel-state` | Optional family snapshots, identities, continuity/readiness, consumer-derived views | Protocol/session metadata + a Kubeless view adapter |
-| `umbriel-arrow` | Optional column schemas and owned record-batch emission, direct from snapshots | Protocol + explicitly selected Arrow representation |
-| `umbriel-polars` | Optional finite lazy-query execution over columnar snapshots | Arrow emitter + matching Polars |
+| `umbriel-arrow` | Optional column schemas and owned record-batch emission, direct from snapshots | Protocol + **polars-arrow (standalone, no query engine)** |
+| `umbriel-polars` | Optional finite lazy-query execution over columnar snapshots | Arrow emitter + matching Polars facade |
 
 These are responsibility boundaries, not a requirement to create empty crates
 before each has code. The separate Polars package keeps the query engine out of
@@ -103,8 +103,9 @@ assessment and checked consequential source seams before incorporating them.
   blocking publication is useful for deliberately backpressured downstream
   work, but awaiting it inline could stall all socket input and command replies.
 - Keep direct **snapshot-to-columns** available without an inventory store.
-  Polars-native Arrow batches are the leading representation for the user's
-  Polars-oriented path; explicitly verify and name that Rust type boundary.
+  Polars-native batches are the **decided representation** (user acceptance
+  2026-10-13; see the [columnar assessment](../columnar/arrow-polars0.glm53m.md)
+  and the decision rules in the columnar section below).
 
 Kubeless's extra packages are currently unpublished in the inspected workspace.
 Choose a reviewed repository pin/dependency arrangement when implementing the
@@ -345,14 +346,28 @@ Keep an inexpensive direct path for consumers that do not need materialization:
 borrowed event → projection → application. A materializer should be an optional
 subscriber, not compulsory storage through which every message passes.
 
-The desired columnar path is an Arrow emitter usable with **Polars 2.0 lazy
-frames**, in the user's terminology. The assessment checked archived Rust
-Polars **0.55.1** and arrow-rs **59.2.0**, recording exact revisions. Polars's
-`RecordBatch` differs from Apache Arrow's Rust type. Its `collect_batches`
-returns a **blocking iterator of DataFrames**, even though the API is behind
-an `async` feature. A dedicated query execution boundary should own that work;
-the socket reader must remain free to drain. A matching-version compilation
-proof is the next step before shipping columnar integration.
+The columnar representation is **decided: Polars-native** (user acceptance,
+2026-10-13). `umbriel-arrow` emits `polars_arrow::RecordBatch` — and depends
+only on the standalone `polars-arrow` crate, not the query engine — while
+`umbriel-polars` adds the facade, whose `From<RecordBatch> for DataFrame`
+conversion is zero-copy by construction. Evidence and the full comparison live
+in [the columnar assessment](../columnar/arrow-polars0.glm53m.md), which
+probe-verified the runtime overhead of polars-arrow versus apache arrow-array
+to be zero for this emitter shape. Governing rules from that decision:
+
+- **Utf8View for every string column, always.** Polars' DataFrame conversion
+  moves view strings untouched but fully copies `Utf8`/`LargeUtf8` columns.
+- **No C Data Interface bridge.** The user prefers no FFI bridging; if an
+  Apache-arrow consumer ever appears, Arrow **IPC serialization** (pure safe
+  Rust on both sides) is the sanctioned interop path, accepting its copy cost.
+- **Same-minor lockstep**: `polars-arrow` and the `polars` facade must pin the
+  same minor so the zero-copy `From` impl sees one crate instance.
+- Switching to an apache arrow-array native emitter later costs zero copied
+  data (probe-proven), so this decision is cheap to revisit with evidence.
+
+Polars's `collect_batches` returns a **blocking iterator of DataFrames**, even
+though the API is behind an `async` feature. A dedicated query execution
+boundary should own that work; the socket reader must remain free to drain.
 
 Candidate flow:
 
