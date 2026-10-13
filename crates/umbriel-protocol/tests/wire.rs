@@ -137,6 +137,11 @@ fn full_validation_including_lazy_and_ignored_values() {
         r#"{"data":[1,],"event":"windows"}"#,
         r#"{"ok":"\uD800"}"#,
         r#"{"ok":null,"extra":"\uDC00"}"#,
+        r#"{"ok":null,"extra":{"\uD800":0}}"#,
+        r#"{"ok":null,"extra":"\uD800\u0041"}"#,
+        r#"{"ok":null,"extra":"\uDD80\uD83E"}"#,
+        r#"{"ok":"\uZZZZ"}"#,
+        r#"{"ok":null,"extra":"\u12G4"}"#,
     ] {
         assert!(Message::decode(bad.as_bytes()).is_err(), "accepted {bad}");
     }
@@ -148,6 +153,10 @@ fn full_validation_including_lazy_and_ignored_values() {
         assert!(Message::decode(bad).is_err());
     }
     assert!(Message::decode(b"{\"ok\":null}\t\r ").is_ok());
+    assert!(
+        Message::decode(br#"{"ok":null,"extra":{"emoji":"\uD83E\uDD80","number":1e400}}"#).is_ok()
+    );
+    assert!(Message::decode(br#"{"ok":"literal \\uD800 and \\\"quote\\\""}"#).is_ok());
 }
 
 #[test]

@@ -125,56 +125,109 @@ impl Framer {
 
 /// Checked decoding, including UTF-8 and all trailing input. The selected type
 /// can borrow from the frame; callers need not build a generic JSON tree.
+/// Caller `Deserialize` code runs before supplementary Unicode-escape checks:
+/// stage application state until this function returns success.
 pub fn decode<'a, T: Deserialize<'a>>(frame: &'a [u8]) -> sonic_rs::Result<T> {
     // Validate first: Sonic's lazy-value path can inspect strings before its
     // final UTF-8 check (and panic in debug builds on invalid string bytes).
     let text = std::str::from_utf8(frame).map_err(serde::de::Error::custom)?;
-    // LazyValue/ignored-field scanning checks syntax but does not decode every
-    // string escape. Discard-only visitors validate syntax and all strings
-    // (including surrogate pairs), without constructing a JSON tree. Validation
-    // precedes caller-selected deserialization.
-    sonic_rs::from_str::<de::IgnoredAny>(text)?;
-    validate_strings(text)?;
-    sonic_rs::from_str(text)
+    // Typed parsing validates structure, ordinary escapes and trailing input,
+    // including LazyValue and IgnoredAny paths (both use skip_one(true)). Their
+    // remaining gap is Unicode escape digits and surrogate pairing. Check only those
+    // string tokens after parsing; do not run a second full syntax deserializer.
+    let value = sonic_rs::from_str(text)?;
+    for_unicode_strings(text, |token| {
+        sonic_rs::from_str::<CheckedString>(token).map(|_| ())
+    })?;
+    Ok(value)
 }
 
 // Syntax is already checked by Sonic. Locate complete string tokens, skipping
-// escaped characters, and ask Sonic to decode them with a discard-only visitor.
-// Unlike deserialize_any on all values, this does not constrain JSON numbers to
-// f64/u64/i64 ranges merely to validate a lazy payload.
-fn validate_strings(text: &str) -> sonic_rs::Result<()> {
+// escaped characters. Only actual Unicode escapes need supplementary decoding.
+// This is token selection, not a second JSON grammar parser, and never converts
+// lazy numbers into f64/u64/i64 merely for validation.
+fn for_unicode_strings(
+    text: &str,
+    mut check: impl FnMut(&str) -> sonic_rs::Result<()>,
+) -> sonic_rs::Result<()> {
     let bytes = text.as_bytes();
+    // Ordinary frames (even those with only \n/\"/\\ escapes) stop here.
+    // A literal \\u can produce a false positive, filtered by the token scan.
+    if memchr::memmem::find(bytes, b"\\u").is_none() {
+        return Ok(());
+    }
     let mut cursor = 0;
     while let Some(offset) = memchr::memchr(b'"', &bytes[cursor..]) {
         let start = cursor + offset;
         cursor = start + 1;
+        let mut unicode = false;
         while let Some(offset) = memchr::memchr2(b'"', b'\\', &bytes[cursor..]) {
             cursor += offset;
             if bytes[cursor] == b'"' {
                 cursor += 1;
-                sonic_rs::from_str::<CheckedKey>(&text[start..cursor])?;
+                if unicode {
+                    check(&text[start..cursor])?;
+                }
                 break;
             }
+            unicode |= bytes[cursor + 1] == b'u';
             cursor += 2; // Syntax validation guarantees an escaped byte follows.
         }
     }
     Ok(())
 }
 
-struct CheckedKey;
-impl<'de> Deserialize<'de> for CheckedKey {
+struct CheckedString;
+impl<'de> Deserialize<'de> for CheckedString {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct CheckKey;
-        impl Visitor<'_> for CheckKey {
-            type Value = CheckedKey;
+        struct CheckString;
+        impl Visitor<'_> for CheckString {
+            type Value = CheckedString;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("a JSON object key")
+                f.write_str("a JSON string")
             }
-            fn visit_str<E: de::Error>(self, _: &str) -> Result<CheckedKey, E> {
-                Ok(CheckedKey)
+            fn visit_str<E: de::Error>(self, _: &str) -> Result<CheckedString, E> {
+                Ok(CheckedString)
             }
         }
-        d.deserialize_string(CheckKey)
+        d.deserialize_string(CheckString)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Reproducible work-count check, not a timing or allocation benchmark:
+    // count supplementary string deserializations on window-like inventories.
+    #[test]
+    fn supplementary_decode_only_visits_actual_unicode_escape_tokens() {
+        let row = r#"{"id":"opaque","title":"雪🦀","app_id":"terminal","workspace":"out:1"}"#;
+        let rows = [row; 32].join(",");
+        let plain = format!("{{\"data\":[{rows}],\"event\":\"windows\"}}");
+        let ordinary_escapes = plain.replace("雪🦀", r#"line\n\"quoted\"\\path"#);
+        let literal_unicode = plain.replace("雪🦀", r#"literal \\uD800"#);
+        let one_unicode = ordinary_escapes.replacen("terminal", r"term\u0069nal", 1);
+        let all_unicode = plain.replace("雪🦀", r"\uD83E\uDD80");
+
+        for (text, expected) in [
+            (plain, 0),
+            (ordinary_escapes, 0),
+            (literal_unicode, 0),
+            (one_unicode, 1),
+            (all_unicode, 32),
+        ] {
+            // Establish the token selector's precondition as in decode().
+            sonic_rs::from_str::<de::IgnoredAny>(&text).unwrap();
+            let mut calls = 0;
+            for_unicode_strings(&text, |token| {
+                calls += 1;
+                sonic_rs::from_str::<CheckedString>(token).map(|_| ())
+            })
+            .unwrap();
+            assert_eq!(calls, expected);
+            decode::<sonic_rs::LazyValue<'_>>(text.as_bytes()).unwrap();
+        }
     }
 }
 

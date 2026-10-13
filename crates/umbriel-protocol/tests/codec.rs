@@ -82,3 +82,20 @@ fn checked_decode_and_lf_inclusive_encoding() {
     assert_eq!(codec::decode::<String>(&bytes).unwrap(), "雪\n\"\\");
     assert_eq!(bytes.capacity(), capacity);
 }
+
+#[test]
+fn typed_decode_checks_unicode_in_ignored_fields_before_returning_success() {
+    #[derive(serde::Deserialize)]
+    struct Projection {
+        selected: u32,
+    }
+    for bad in [
+        r#"{"selected":7,"ignored":"\uD800"}"#,
+        r#"{"selected":7,"ignored":{"\uDC00":1}}"#,
+        r#"{"selected":7,"ignored":["\uD800\u0041"]}"#,
+    ] {
+        assert!(codec::decode::<Projection>(bad.as_bytes()).is_err());
+    }
+    let frame = br#"{"selected":7,"ignored":["\uD83E\uDD80",1e400]}"#;
+    assert_eq!(codec::decode::<Projection>(frame).unwrap().selected, 7);
+}

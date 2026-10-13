@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ecbc463e2ffedTrt7LV5wGlDNq
-    title: Fresh protocol implementation, boundary tests, and Sonic validation findings
+    title: Fresh protocol implementation, boundary tests, and source-checked simplification of Sonic validation
   - resource: ../../design/architecture/architecture1.gpt6a.md
     title: Selected Sonic and sans-I/O multi-crate responsibilities
   - resource: ../../design/protocol/commands0.glm53m.md
@@ -18,6 +18,10 @@ sources:
     title: Governing LF-inclusive request bound and blank subscription response
   - resource: ../../design/assessment/reuse0.gpt6a.md
     title: Session ownership and optional state and columnar boundaries
+  - resource: https://docs.rs/crate/sonic-rs/0.5.10/source/src/serde/de.rs
+    title: Resolved local source checked for validated lazy/discard paths and trailing-input enforcement
+  - resource: https://docs.rs/crate/sonic-rs/0.5.10/source/src/parser.rs
+    title: Resolved local source checked for string skipping and supplementary Unicode-escape validation needs
 ---
 
 # Umbriel protocol substrate
@@ -34,13 +38,20 @@ This crate owns no socket, executor, request scheduler, or materialized state.
   not server response limits. Storage capacity survives consumption; compaction
   moves only unconsumed bytes. A scan cursor avoids repeated prefix scanning.
 - `codec::decode<T>`: caller-selected Serde decoding with frame-bound borrowing.
-  UTF-8 is checked before Sonic, followed by discard-only JSON syntax validation
-  and string escape validation, then typed decoding. This adds validation work,
-  deliberately avoiding a generic JSON tree and unchecked lazy string escapes.
+  UTF-8 is checked before Sonic; typed parsing then checks structure, ordinary
+  escapes and trailing input, including lazy/ignored values. Supplementary
+  decoding checks only string tokens containing actual Unicode escapes, to reject
+  invalid hex digits and surrogate pairs that Sonic's checked skip path accepts.
+  Frames without `\u` byte sequences skip token selection entirely. This avoids a redundant
+  full syntax pass and reparsing every key/string, without a generic JSON tree.
+  Caller `Deserialize` code may run before supplementary validation fails:
+  **stage application state until decoding returns success**.
 - `envelope::Message`: order-independent `Ok(LazyValue)`, `Err(Cow<str>)`,
   `Event { name, data }`, or `Blank`. Present `ok:null` is success; `Blank` is
   **not** success. Significant duplicate/conflicting keys fail; additive fields
   are accepted only after validation. Unknown family names remain available.
+  Unused additive values follow Sonic's checked discard path rather than retain
+  lazy storage; escaped additive values no longer create owned lazy copies.
   Unescaped strings/payloads borrow where Sonic supports it; escaped strings may
   own storage. Promote needed data before reusing the receive buffer.
 - `request::Request`: seven read-only queries, raw `msg` action strings,

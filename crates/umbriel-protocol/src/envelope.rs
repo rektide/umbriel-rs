@@ -91,7 +91,7 @@ impl<'a> Message<'a> {
 }
 
 // Serde's ordinary Cow implementation owns strings. This visitor preserves
-// Sonic's borrowed fast path, but takes ownership of unescaped scratch strings.
+// Sonic's borrowed fast path, but takes ownership of decoded escaped scratch strings.
 struct Text<'a>(Cow<'a, str>);
 impl<'de> Deserialize<'de> for Text<'de> {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -156,7 +156,7 @@ impl<'de> Deserialize<'de> for Message<'de> {
                             data = Some(map.next_value::<LazyValue<'de>>()?);
                         }
                         _ => {
-                            let _ = map.next_value::<LazyValue<'de>>()?;
+                            let _ = map.next_value::<de::IgnoredAny>()?;
                         }
                     }
                 }
