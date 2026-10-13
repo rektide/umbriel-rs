@@ -9,13 +9,15 @@ generated:
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
-    title: Establish the Rust project direction, protocol research, Sonic-first multi-crate design, and comparative assessment brief
+    title: Establish protocol research and architecture, integrate the comparative assessment, and review the fresh Rust foundation
   - resource: design/architecture/architecture1.gpt6a.md
     title: Current library-wide architecture and human-selected direction
   - resource: design/assessment/brief0.gpt6a.md
     title: Commission for learning from tmux-interface-control followed by kubeless
   - resource: design/assessment/reuse0.gpt6a.md
     title: Completed Astra-medium assessment and reviewed reuse recommendations
+  - resource: crates/umbriel-protocol/README.md
+    title: Implemented protocol foundation and public codec, envelope, and request interfaces
 ---
 
 # umbriel-rs
@@ -28,9 +30,31 @@ drivers, optional materialized state, and optional Arrow/Polars output. Typed
 queries, actions, and subscriptions are the main surface. A stable-active-window
 stream is one example consumer.
 
-Early development: the architecture is being grounded in Umbriel's source and
-existing Rust protocol/control libraries. Detailed designs remain proposals;
-performance has not yet been benchmarked.
+Early development: the first protocol crate is implemented. The broader client,
+session, state, and columnar design is grounded in Umbriel source and a completed
+assessment of existing Rust protocol/control libraries. Performance has not yet
+been benchmarked.
+
+## Implemented foundation
+
+[`umbriel-protocol`](crates/umbriel-protocol/README.md) provides:
+
+- Reusable, bounded NDJSON framing with borrowed frame slices.
+- Sonic decoding into caller-selected types and lazy wire payloads.
+- Order-independent reply/event envelopes, including successful `ok:null`,
+  unknown event names, and explicit blank subscription responses.
+- Requests for all seven queries, action dispatch, subscriptions, and headless
+  output operations, with correct JSON escaping and LF-inclusive request limits.
+
+The crate is sans-I/O and forbids unsafe code in its own implementation. Session
+scheduling and transport are the next layer; full response models and typed
+action grammar will expand the wire surface.
+
+```sh
+cargo nextest run --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+```
 
 ## Read first
 
