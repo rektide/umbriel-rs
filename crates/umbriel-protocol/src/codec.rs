@@ -142,8 +142,9 @@ pub fn decode<'a, T: Deserialize<'a>>(frame: &'a [u8]) -> sonic_rs::Result<T> {
     Ok(value)
 }
 
-// Syntax is already checked by Sonic. Locate complete string tokens, skipping
-// escaped characters. Only actual Unicode escapes need supplementary decoding.
+// Sonic checks structure and ordinary escapes, but skipped Unicode digits can
+// hide delimiters. Validate those digits before locating the closing quote.
+// Only actual Unicode escapes need supplementary string decoding.
 // This is token selection, not a second JSON grammar parser, and never converts
 // lazy numbers into f64/u64/i64 merely for validation.
 fn for_unicode_strings(
@@ -161,7 +162,10 @@ fn for_unicode_strings(
         let start = cursor + offset;
         cursor = start + 1;
         let mut unicode = false;
-        while let Some(offset) = memchr::memchr2(b'"', b'\\', &bytes[cursor..]) {
+        loop {
+            let Some(offset) = memchr::memchr2(b'"', b'\\', &bytes[cursor..]) else {
+                return Err(de::Error::custom("unterminated supplemental string token"));
+            };
             cursor += offset;
             if bytes[cursor] == b'"' {
                 cursor += 1;
@@ -170,8 +174,21 @@ fn for_unicode_strings(
                 }
                 break;
             }
-            unicode |= bytes[cursor + 1] == b'u';
-            cursor += 2; // Syntax validation guarantees an escaped byte follows.
+            let escaped = bytes.get(cursor + 1).ok_or_else(|| {
+                <sonic_rs::Error as de::Error>::custom("incomplete supplemental string escape")
+            })?;
+            if *escaped == b'u' {
+                let digits = bytes.get(cursor + 2..cursor + 6).ok_or_else(|| {
+                    <sonic_rs::Error as de::Error>::custom("incomplete Unicode escape")
+                })?;
+                if !digits.iter().all(u8::is_ascii_hexdigit) {
+                    return Err(de::Error::custom("invalid Unicode escape digits"));
+                }
+                unicode = true;
+                cursor += 6;
+            } else {
+                cursor += 2;
+            }
         }
     }
     Ok(())
@@ -197,6 +214,23 @@ impl<'de> Deserialize<'de> for CheckedString {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_selector_rejects_incomplete_tokens_without_indexing_past_end() {
+        for text in [
+            r#""\u0041"#,
+            r#""\u0041\"#,
+            r#""\u0041\""#,
+            r#""\u000\""#,
+            r#""\u"#,
+            r#""\u00"#,
+        ] {
+            assert!(
+                for_unicode_strings(text, |_| Ok(())).is_err(),
+                "accepted {text}"
+            );
+        }
+    }
 
     // Reproducible work-count check, not a timing or allocation benchmark:
     // count supplementary string deserializations on window-like inventories.

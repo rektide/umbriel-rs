@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ecbc463e2ffedTrt7LV5wGlDNq
-    title: Fresh protocol implementation, boundary tests, and source-checked simplification of Sonic validation
+    title: Fresh protocol implementation, source-checked selective Sonic validation, and malformed-Unicode token-boundary correction
   - resource: ../../design/architecture/architecture1.gpt6a.md
     title: Selected Sonic and sans-I/O multi-crate responsibilities
   - resource: ../../design/protocol/commands0.glm53m.md
@@ -42,6 +42,8 @@ This crate owns no socket, executor, request scheduler, or materialized state.
   escapes and trailing input, including lazy/ignored values. Supplementary
   decoding checks only string tokens containing actual Unicode escapes, to reject
   invalid hex digits and surrogate pairs that Sonic's checked skip path accepts.
+  Token selection checks all four hex digits before advancing, so malformed
+  digits cannot hide quotes or backslashes; incomplete tokens return errors.
   Frames without `\u` byte sequences skip token selection entirely. This avoids a redundant
   full syntax pass and reparsing every key/string, without a generic JSON tree.
   Caller `Deserialize` code may run before supplementary validation fails:

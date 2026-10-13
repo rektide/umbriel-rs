@@ -123,6 +123,38 @@ fn reject_duplicates_conflicts_missing_keys_and_bad_types() {
 }
 
 #[test]
+fn malformed_unicode_digits_cannot_hide_token_boundaries() {
+    assert!(Message::decode(br#"{"ok":"\u000\"}"#).is_err());
+    for position in 0..4 {
+        for hidden in *b"\"\\" {
+            let mut digits = *b"0041";
+            digits[position] = hidden;
+            let token = format!("\"\\u{}\"", std::str::from_utf8(&digits).unwrap());
+            for frame in [
+                format!("{{\"ok\":{token}}}"),
+                format!("{{\"ok\":{{\"nested\":[{token}]}}}}"),
+                format!("{{\"event\":\"windows\",\"data\":{{\"nested\":[{token}]}}}}"),
+                format!("{{\"ok\":null,\"ignored\":{{\"nested\":[{token}]}}}}"),
+                format!("{{\"ok\":null,\"ignored\":{{{token}:1}}}}"),
+            ] {
+                assert!(
+                    Message::decode(frame.as_bytes()).is_err(),
+                    "accepted {frame}"
+                );
+            }
+        }
+    }
+    for frame in [
+        &br#"{"ok":"\u000\"}"#[..],
+        &br#"{"ok":null,"ignored":{"nested":["\u000\"]}}"#[..],
+        &br#"{"ok":"\u0041\"#[..],
+        &br#"{"ok":null,"ignored":"\u0041\"#[..],
+    ] {
+        assert!(Message::decode(frame).is_err());
+    }
+}
+
+#[test]
 fn full_validation_including_lazy_and_ignored_values() {
     for bad in [
         r#"{"ok":null} {}"#,
