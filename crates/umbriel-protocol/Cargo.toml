@@ -1,0 +1,12 @@
+[package]
+name = "umbriel-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Sans-I/O Umbriel wire protocol and bounded NDJSON codec"
+
+[dependencies]
+memchr = "2.8.3"
+serde = { version = "1.0.229", features = ["derive"] }
+sonic-rs = "0.5.10"
+thiserror = "2.0.21"
