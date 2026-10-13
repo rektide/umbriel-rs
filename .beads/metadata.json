@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "umbrs",
+  "project_id": "b596e599-fb25-4691-b3c9-59a9bef61243"
+}
