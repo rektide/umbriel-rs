@@ -70,6 +70,9 @@ cargo fmt --all --check
   laws, independent bounded delivery, and a concrete Arrow/Polars boundary.
   The [assessment brief](design/assessment/brief0.gpt6a.md) records the commission.
 
+- [Session handoff](design/handoff/handoff0.glm53m.md)
+  — state, decisions, pitfalls, and next steps as of the founding session.
+
 ## Supporting research
 
 - [JSON and buffer findings](design/performance/json0.gpt6a.md) — source-checked
