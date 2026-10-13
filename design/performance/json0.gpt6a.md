@@ -24,6 +24,11 @@ sources:
 
 ## Recommendation and evidence status
 
+**Subsequent human direction:** Sonic is selected, and library development is
+the priority. The [current architecture](../architecture/architecture1.gpt6a.md)
+supersedes the comparative selection gate below. These source findings and the
+experiment design remain available when a concrete performance question arises.
+
 **Start with Sonic's checked, typed projection path. Compare it with equally
 shaped serde_json and simd-json implementations before selecting a permanent
 backend.** Preserve a path to simd-json's reusable tape for consumers that need
@@ -222,8 +227,10 @@ inside socket scheduling is still useful evidence about where to work next.
 
 ## Cross-references
 
-- [Sans-I/O architecture](../architecture/architecture0.gpt6a.md): owns frame
-  lifetimes, runtime boundaries, dwell semantics, and the implementation sequence.
+- [Current architecture](../architecture/architecture1.gpt6a.md): selects Sonic
+  and owns the whole-protocol, multi-crate direction.
+- [Initial sans-I/O architecture](../architecture/architecture0.gpt6a.md): preserves
+  detailed frame lifetimes and dwell semantics from the first proposal.
 - [Command research](../protocol/commands0.glm53m.md): owns actual wire shapes and
   connection constraints; parser benchmarks must use that protocol rather than
   generic large-JSON benchmark files.

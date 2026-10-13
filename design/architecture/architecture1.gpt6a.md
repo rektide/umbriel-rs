@@ -9,13 +9,17 @@ generated:
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
-    title: Human selection of Sonic and correction toward designing and building the whole protocol library
+    title: Human selection of Sonic, whole-protocol scope, multiple crates, comparative assessment, and Arrow/Polars direction
   - resource: architecture0.gpt6a.md
     title: Predecessor sans-I/O boundaries and the focused active-window example
   - resource: ../performance/json0.gpt6a.md
     title: Source-checked Sonic capabilities and buffer ownership tradeoffs
   - resource: https://chatgpt.com/s/t_6acdd415b14481918cce70cf0cec5e09
     title: Shared Rust JSON Protocol Speed answer, read in full
+  - resource: ../protocol/commands0.glm53m.md
+    title: Returned protocol catalog and sequential subscriber-reuse evidence
+  - resource: ../protocol/review0.gpt6a.md
+    title: Source-reviewed size accounting, empty subscription response, and dedup qualifications
 ---
 
 # Sonic-first architecture for the whole Umbriel protocol
@@ -47,10 +51,31 @@ workspace observer, a shell, and a geometry controller.
 | Transport | Socket discovery, actual I/O, scheduling, explicit connection policy | Ordinary Rust applications |
 | Observe | Optional reductions over protocol snapshots | Active window, inventory, convergence helpers |
 
-Start with modules in a single crate. Keep dependency-bearing transport modules
-feature-gated when introduced. The core may use `std` and allocation without
-owning file descriptors, an executor, a wall clock, or a timer. That is the useful
-sans-I/O boundary here.
+Use a **multi-crate Cargo workspace**, as subsequently requested by the user.
+The core may use `std` and allocation without owning file descriptors, an
+executor, a wall clock, or a timer. That is the useful sans-I/O boundary here.
+
+### Proposed crate boundaries
+
+| Crate | Owns | Dependencies flow toward |
+|---|---|---|
+| `umbriel-protocol` | Framing, Sonic wire envelopes, query/action grammar, payload models, runtime-free protocol session mechanics | Sonic, Serde, small codec utilities |
+| `umbriel-client` | Unix discovery/I/O, request and subscription drivers, runtime integration | Protocol |
+| `umbriel-state` | Optional materialized snapshots, identities, continuity/initialization, consumer-derived views | Protocol; client integration kept at an adapter boundary |
+| `umbriel-arrow` | Optional column schemas and owned record-batch emission | Protocol/state and the selected Arrow representation |
+
+These are responsibility boundaries, not a requirement to create empty crates
+before each has code. A later `umbriel-polars` crate or a feature of the columnar
+crate can provide lazy query integration, depending on actual Arrow/Polars API
+compatibility. Neither Polars nor an executor belongs in `umbriel-protocol`.
+The initial codec/envelope implementation can land together in the protocol
+crate while the assessment informs state/driver boundaries.
+
+The user commissioned an Astra-medium assessment of **tmux-interface-control
+first, kubeless second** after this protocol/design baseline exists. The goal
+is to discover reusable subscription, observation, control, and reconciliation
+abstractions rather than rebuilding them independently. Crate names and exact
+ownership above are proposals for that assessment to challenge.
 
 ## Typed convenience and borrowed control
 
@@ -103,8 +128,11 @@ dependency; ergonomic typed APIs should speak in Umbriel terms.
 - Do not partially publish payload-derived state if later decoding fails.
 
 The [command investigation](../protocol/commands0.glm53m.md) supplies the exact
-supported shapes and any exceptions. The implementation should use those
-findings rather than extrapolating from a single `windows` example.
+supported shapes. Read it with the [parent source review](../protocol/review0.gpt6a.md):
+a keyboard-only subscription without a keyboard can produce a bare LF instead
+of JSON. The session layer must handle this empty initial response without
+completing an ordinary command. The implementation should use these findings
+rather than extrapolating from a single `windows` example.
 
 ## Queries and data models
 
@@ -185,17 +213,20 @@ Subscription: New -> SendingSubscribe -> Initializing -> Streaming -> Closed
 
 Errors and EOF can terminate either path. Initial event snapshots are useful
 data, not disposable handshake traffic. Track which requested families have
-arrived so a caller can know when its subscription is initialized. Initialization
-does not imply an atomic multi-family snapshot or a shared revision number.
+arrived. A keyboard family may have no initial state, and there is no universal
+initialization-complete marker, so expose per-family readiness rather than an
+unconditional wait for every requested family. Initialization does not imply an
+atomic multi-family snapshot or a shared revision number.
 
-Ordinary command sockets are one-shot. The verified subscribed-command behavior
-belongs in a separately specified mode, if offered, rather than making socket
-reuse an undocumented universal assumption. Until its buffering and scheduling
-contract is implemented and exercised, the normal adapter uses a subscription
-connection plus one-shot request connections.
+Ordinary command sockets are one-shot. Source and a read-only live probe confirm
+that accepted subscriptions can carry further sequential commands and replies.
+A persistent single-owner subscription/command driver is therefore a concrete
+candidate, not merely an upstream wish. Its buffering, interleaving, initialization,
+and error handling need a specified implementation; ordinary one-shot requests
+remain useful independently.
 
-With no wire correlation ID, allow at most one outstanding request on any
-experimental reusable command channel. Do not count event frames as replies.
+With no wire correlation ID, allow at most one outstanding request on a reusable
+subscribed command channel. Do not count event or blank initial frames as replies.
 Multiple independent one-shot requests can use separate connections if the
 application wants concurrency; bound that concurrency at the adapter layer.
 
@@ -237,7 +268,9 @@ For subscriptions, choose output semantics explicitly:
 
 Raw snapshot coalescing is not universally correct: consumers that measure
 continuity or react to transitions need to see each delivered transition. Keep
-coalescing in a consumer-aware layer.
+coalescing in a consumer-aware layer. Initial/repeated-subscribe responses can
+duplicate broadcast state; broadcast dedup does not guarantee unique messages
+per subscriber.
 
 ## Observations and examples
 
@@ -254,6 +287,58 @@ The [predecessor's dwell section](architecture0.gpt6a.md#stable-active-window)
 preserves the detailed 750 ms semantics and traces. Keep that helper small and
 runtime-free, with injected monotonic time. It must not dictate the protocol's
 public model, transport topology, or internal storage for unrelated consumers.
+
+## Materialized state and columnar output
+
+Here **materializing** can mean two different things:
+
+1. Maintaining a current, queryable view from incoming full snapshots. A windows
+   update replaces the windows relation; missing IDs disappear from that view.
+   This is observational state maintenance, not an instruction to close windows
+   or reconcile the compositor toward a desired configuration.
+2. Executing a lazy query and producing concrete column buffers/Arrow batches.
+   A lazy plan describes computation; it is not itself a continuously updating
+   subscription or an emitted record batch.
+
+Keep an inexpensive direct path for consumers that do not need materialization:
+borrowed event → projection → application. A materializer should be an optional
+subscriber, not compulsory storage through which every message passes.
+
+The desired columnar path is an Arrow emitter usable with **Polars 2.0 lazy
+frames**, in the user's terminology. The exact Rust Polars version and streaming
+API need verification before implementation. Do not assume a Python product
+version names a compatible Rust crate, or that Apache Arrow's `RecordBatch`
+and Polars' Arrow representation are the same Rust type.
+
+Candidate flow:
+
+```text
+full family snapshot
+  -> selected typed fields / column builders
+  -> owned, schema-bound batch (or a current-state table)
+  -> Polars lazy query plan
+  -> explicit execution and output batches
+```
+
+A snapshot-per-batch design can avoid a per-row object inventory entirely. It
+must still represent an **empty** snapshot as replacement, not silence. A
+long-lived materialized table needs explicit replacement/deletion semantics;
+merely appending every windows array would turn current state into duplicated
+history. Historical append streams are useful too, but must carry snapshot
+identity and their different contract.
+
+Track family, connection epoch, local observation sequence/time, and schema
+version at appropriate batch metadata/envelope boundaries. None of those local
+coordinates is a server transaction ID. Cross-family joins can combine states
+observed at different moments; initialization of all families does not make
+them atomic. Columnar buffers must own their contents beyond receive-buffer
+reuse, even when the initial Sonic parse borrows.
+
+Batch by actual snapshots or an explicit rows/bytes/latency policy. Keep this
+policy separate from the 750 ms stable-focus observation. Bound builder/output
+storage and define what lag means. The forthcoming assessment should evaluate
+whether kubeless already supplies useful observation/materialization boundaries
+and where a columnar sink can attach without forcing a control loop on readers.
 
 ## Build order and verification
 

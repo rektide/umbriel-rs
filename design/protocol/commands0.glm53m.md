@@ -11,6 +11,8 @@ generated:
 sources:
   - resource: opencode://ses_ecbf7de5cffe4m4a3AoV3OiXNb
     title: Full protocol source read (server, config, CLI, tests), live read-only socket probes, and wire catalog
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent added navigation to the source-review corrections and current architecture; original investigation preserved
   - resource: https://github.com/noctalia-dev/umbriel/tree/7666af0a43560658e7b966befcbe47c101968e1c
     title: Umbriel compositor checkout (VERSION 0.1.0, commit 2026-10-09) at /home/rektide/a/noctalia-dev/umbriel
   - resource: file:///home/rektide/src/zooming-kittens/design/umbriel/investigation0.glm53max.md
@@ -22,6 +24,11 @@ sources:
 ---
 
 # Umbriel IPC wire protocol: commands, subscriptions, and the action grammar
+
+**Read with the [parent source review](review0.gpt6a.md)**, which corrects
+request-size accounting, blank subscription responses, subscriber-wide dedup
+claims, and a few schema/decoder recommendations. The current library direction
+is [Sonic-first and multi-crate](../architecture/architecture1.gpt6a.md).
 
 ## Scope and grounding
 

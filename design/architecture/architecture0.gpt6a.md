@@ -22,6 +22,10 @@ sources:
 
 # A high-performance sans-I/O Umbriel client
 
+**Predecessor:** the [current architecture](architecture1.gpt6a.md) adopts the
+user's subsequent Sonic-first, whole-protocol, multi-crate direction. This
+document preserves the earlier argument and detailed active-window semantics.
+
 ## Direction
 
 **One connection owner, reusable byte storage, borrowed decoding within a frame,
