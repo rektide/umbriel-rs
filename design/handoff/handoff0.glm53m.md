@@ -10,6 +10,12 @@ generated:
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
     title: Founding session — research, architecture, assessment, protocol implementation, and ticketing
+  - resource: https://crates.io/api/v1/crates/polars
+    title: Verified latest published Rust polars is 0.55.2; no Rust 2.0 exists
+  - resource: https://crates.io/api/v1/crates/kubeless
+    title: Verified the kubeless name is taken by an unrelated 2018 crate
+  - resource: file:///home/rektide/src/kubeless/Cargo.toml
+    title: Confirmed kubeless is a kube-rs fork with fork-free kubeless-view substrate
   - resource: crates/umbriel-protocol/README.md
     title: Implemented foundation surface and verification commands
   - resource: ../protocol/commands0.glm53m.md
@@ -118,17 +124,30 @@ ran because that provider hit its 5-hour usage limit (resets 2026-10-13
 
 ## Known pitfalls
 
-- **Polars**: Rust crate at the archived revision is **0.55.1** (not "2.0" —
-  that's the user's shorthand for the lazy-frame workflow). Its `RecordBatch`
-  is Polars-native, *not* Apache `arrow-array::RecordBatch`; `collect_batches`
-  is a **blocking** `Iterator<DataFrame>` behind the `async` feature. Run
-  queries off the receive owner. Pin versions; compile a proof first.
-- **kubeless packages are unpublished** (workspace-local). A dependency needs
-  a reviewed path/git pin, not a registry version.
+- **Polars**: latest published Rust crate is **0.55.2** (2026-08); the archived
+  0.55.1 checkout is essentially current. **There is no Rust "2.0"** — that
+  number comes from the Python product side; pin `polars = "0.55"`. The real
+  issues: `polars_arrow`'s `RecordBatch` is a **different Rust type** from
+  Apache `arrow-array::RecordBatch` (build Polars-native, name it honestly);
+  `collect_batches` is a **blocking** `Iterator<DataFrame>` behind the `async`
+  feature — run queries off the receive owner. Keep `umbriel-arrow` free of
+  Polars so version bumps stay confined to `umbriel-polars`.
+- **kubeless is a fork of kube-rs/kube** (workspace metadata still points at
+  `kube-rs/kube`; version bumped to 4.2.0). Name collisions verified on
+  crates.io: `kubeless` itself is **taken** (unrelated 2018 Slowki crate), and
+  the fork's `kube`/`kube-core`/`kube-client`/`kube-derive`/`kube-runtime`
+  names are **taken by upstream kube** — never publish that subtree. The view
+  substrate we need is **fork-free**: `kubeless-view-change` (zero deps),
+  `kubeless-view-memory` (+hashbrown/parking_lot), `kubeless-view`
+  (+futures/thiserror). Link by **git dependency pinned to a rev** for now
+  (path dep works locally); publishing the view leaves later requires fixing
+  the `repository` field (currently points at kube-rs/kube) and accepting
+  lockstep `=4.2.0` cross-pins.
 - **sonic-rs 0.5.10 quirks** (found the hard way, now handled + tested): lazy
   path can inspect strings before final UTF-8 check (we precheck); checked
   skip path accepts invalid `\u` hex digits (we validate digits before
-  selecting token boundaries — see `cf065ea0`).
+  selecting token boundaries — see `cf065ea0`). Also note Sonic wants
+  `-C target-cpu=native` for its SIMD paths (document the portability tradeoff).
 - **zooming-kittens is niri-implemented.** Its Umbriel doc is research
   precedent only, not an existing client.
 - **Live compositor** runs at `/run/user/1000/umbriel-wayland-0.sock`. Probes
@@ -151,3 +170,10 @@ ran because that provider hit its 5-hour usage limit (resets 2026-10-13
 3. Pick up `umbrs-protocol-models` (P1) or re-dispatch `umbrs-protocol-review`.
 4. Delegation: Sol medium builds, g reviews/does routine work, prompts in
    spaced prose, background dispatch, explicit-path commits.
+5. **Capture fixtures early** (time-sensitive): read-only probe the live
+   session into `tests/fixtures/` — windows, workspaces, submap, layers,
+   theme — with compositor revision (`7666af0a`) and date metadata. Models
+   tests and benchmarks both need this corpus, and the current window
+   inventory is a one-time opportunity.
+6. **CI + toolchain**: GitHub Actions (fmt, nextest, clippy `-D warnings`),
+   `rust-toolchain.toml` pin, cargo-deny.
