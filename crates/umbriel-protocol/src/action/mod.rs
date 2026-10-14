@@ -7,13 +7,20 @@ use std::borrow::Cow;
 use crate::request::Request;
 
 pub mod catalog;
+pub mod command;
+pub mod control;
+pub mod extent;
 pub mod no_argument;
+pub mod target;
 pub mod workspace;
 
+pub use control::{LayoutSelection, QuitConfirmation};
+pub use extent::{ExtentDelta, ExtentFraction};
 pub use workspace::{WorkspaceSelector, WorkspaceTarget};
 
-/// Local syntax errors only; no compositor state is consulted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Local syntax errors only; no compositor state is consulted. `Eq` is not
+/// implemented because fraction and delta variants carry the rejected `f64`.
+#[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ValidationError {
     #[error("{argument} must not be empty")]
@@ -24,6 +31,12 @@ pub enum ValidationError {
     UnrepresentableWorkspaceName,
     #[error("workspace output must not contain a slash")]
     InvalidWorkspaceOutput,
+    #[error("fraction {value} must be finite within 0.1..=1.0")]
+    InvalidFraction { value: f64 },
+    #[error("delta {value} must be finite, nonzero, and at most 0.9 in magnitude")]
+    InvalidFractionDelta { value: f64 },
+    #[error("submap name may not be \"disable\" or contain ']'")]
+    InvalidSubmapName,
 }
 
 /// Immutable action text, reusable through the ordinary request encoder.
@@ -61,6 +74,14 @@ impl Action<'static> {
     fn parameterized(spec: catalog::Spec, argument: impl std::fmt::Display) -> Self {
         Self {
             text: Cow::Owned(format!("{}:{argument}", spec.name)),
+        }
+    }
+
+    // Optional families use the bare borrowed name for absent arguments; no
+    // colon with an empty suffix is valid on the wire.
+    fn bare(spec: catalog::Spec) -> Self {
+        Self {
+            text: Cow::Borrowed(spec.name),
         }
     }
 }

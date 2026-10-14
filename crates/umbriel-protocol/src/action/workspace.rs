@@ -110,4 +110,16 @@ impl Action<'static> {
     pub fn workspace_switch<'a>(target: impl Into<WorkspaceTarget<'a>>) -> Self {
         Self::parameterized(catalog::WORKSPACE_SWITCH, target.into())
     }
+
+    /// Move the focused window to the selected workspace, reusing the switch
+    /// target grammar unchanged.
+    pub fn window_move_to_workspace<'a>(target: impl Into<WorkspaceTarget<'a>>) -> Self {
+        Self::parameterized(catalog::WINDOW_MOVE_TO_WORKSPACE, target.into())
+    }
+
+    /// Move the focused column to the selected workspace, reusing the switch
+    /// target grammar unchanged.
+    pub fn column_move_to_workspace<'a>(target: impl Into<WorkspaceTarget<'a>>) -> Self {
+        Self::parameterized(catalog::COLUMN_MOVE_TO_WORKSPACE, target.into())
+    }
 }
