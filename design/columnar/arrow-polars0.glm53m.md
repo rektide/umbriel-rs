@@ -53,6 +53,14 @@ verification:
 
 # Polars and Apache Arrow columnar targets
 
+> **Ruling (user acceptance, 2026-10-13): Polars-native only — option A.**
+> No C Data Interface bridge; Utf8View strings everywhere; Arrow IPC is the
+> sanctioned interop fallback. This document is the evidence, not the ruling;
+> the decision and its governing rules live in
+> [architecture1's columnar section](../architecture/architecture1.gpt6a.md#materialized-state-and-columnar-output).
+> The probe results below remain valid and are what makes the decision cheap
+> to revisit: switching to an arrow-array emitter later costs zero copied data.
+
 ## Recommendation
 
 **Make `umbriel-arrow` emit `arrow_array::RecordBatch` natively, and put the
