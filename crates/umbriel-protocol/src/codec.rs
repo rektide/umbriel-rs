@@ -10,6 +10,12 @@ use thiserror::Error;
 use crate::REQUEST_LIMIT;
 
 /// Incoming client policy. Frame bytes exclude LF; buffered bytes include LF.
+///
+/// To accept a complete frame of `frame` payload bytes, `buffered` must leave
+/// room for one further byte: the terminating LF. A smaller `buffered` limit
+/// is a valid deliberate policy, but once payload bytes alone fill the budget,
+/// the LF is rejected as `BufferFull` and a near-limit frame can never
+/// complete; `finish` will then report those bytes as truncated.
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     pub frame: usize,

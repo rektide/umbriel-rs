@@ -64,6 +64,37 @@ fn fragmented_scanning_and_zero_frame_bound() {
 }
 
 #[test]
+fn complete_overlong_frame_rejected_atomically_within_chunk() {
+    let mut f = Framer::new(Limits {
+        frame: 4,
+        buffered: 64,
+    });
+    // At-limit frames complete normally; overlong means strictly past the limit.
+    f.push(b"abcd\n").unwrap();
+    assert_eq!(f.next_frame(), Some(&b"abcd"[..]));
+    // A complete overlong frame is rejected before any byte is stored,
+    // including later complete frames in the same chunk.
+    assert!(matches!(
+        f.push(b"abcde\n"),
+        Err(FrameError::FrameTooLong { .. })
+    ));
+    assert!(matches!(
+        f.push(b"abcde\nfg\n"),
+        Err(FrameError::FrameTooLong { .. })
+    ));
+    assert_eq!(f.buffered_len(), 0);
+    assert_eq!(f.next_frame(), None);
+    // Buffered input survives rejection of the push that would complete it.
+    f.push(b"fg").unwrap();
+    assert!(matches!(
+        f.push(b"hij\n"),
+        Err(FrameError::FrameTooLong { .. })
+    ));
+    assert_eq!(f.buffered_len(), 2);
+    assert_eq!(f.finish(), Err(FrameError::Truncated { bytes: 2 }));
+}
+
+#[test]
 fn checked_decode_and_lf_inclusive_encoding() {
     assert_eq!(codec::decode::<u32>(b"12 ").unwrap(), 12);
     for bad in [&b"12 false"[..], &b"\"\xff\""[..], &b"[1,"[..]] {
