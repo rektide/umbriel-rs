@@ -10,6 +10,8 @@ generated:
 sources:
   - resource: opencode://ses_ec73513c1ffeNKrefJ7ayTNQGo
     title: Inspected implemented Umbriel and current sibling Kubeless; separated existing reuse from small upstream asks and native policy
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent reviewed the proposed extraction boundary against implemented delivery and corrected symbol and locking details
   - resource: ../assessment/reuse0.gpt6a.md
     title: Historical reuse assessment, not authority for current package layout or capabilities
   - resource: ../../crates/umbriel-client/src/delivery.rs
@@ -104,7 +106,7 @@ alone were not treated as capability evidence.
 
 ### Current friction and existing precedent
 
-[`delivery::Producer::push`, `finish`, `Drop`, `Observer::{recv, try_recv}`](../../crates/umbriel-client/src/delivery.rs)
+[`delivery::Producer::{push, finish}`, `Observer::{recv, try_recv}` and the producer-loss path](../../crates/umbriel-client/src/delivery.rs)
 implement a small Tokio channel plus shared byte/terminal state. Each observer
 has its own item and logical byte budget. The driver's
 [`Driver::publish`](../../crates/umbriel-client/src/driver.rs) synchronously admits
@@ -152,6 +154,13 @@ and release exactly that weight on receive; do not recompute mutable payload
 weights. Retain one terminal outside queue capacity. Reject further admission
 after terminal and expose it repeatedly after drain. Construction validates
 capacities. Wakers must not be invoked under the accounting lock.
+
+That last property is a proposed extraction improvement, not a claim about the
+current wrapper: Umbriel calls Tokio's `try_send` while holding its accounting
+lock, then detects unexpected producer disappearance on the receiving side.
+A generalized cell should reserve weight before publication, release the lock
+before waking, and roll back reservation on refusal. Test immediate/reentrant
+wake behavior rather than assuming every executor behaves like Tokio's scheduler.
 
 The caller supplies logical weights: this is not allocator measurement or unique
 resident-memory accounting. Shared frame storage can be conservatively charged

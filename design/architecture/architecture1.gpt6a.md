@@ -63,10 +63,11 @@ executor, a wall clock, or a timer. That is the useful sans-I/O boundary here.
 
 ### Proposed crate boundaries
 
-The protocol, session, Arrow-emitter, and Polars-query crates are implemented;
+The protocol, session, client, state, Arrow-emitter, and Polars-query crates are implemented;
 the [root implementation inventory](../../README.md#implemented-crates) links
-their current APIs and examples. Client and materialized-state crates remain
-subsequent slices of this architecture.
+their current APIs and examples. Action families remain ordinary modules inside
+the protocol crate; clock-free dwell and inventories share the state crate.
+Small helpers and examples do not acquire separate packages.
 
 | Crate | Owns | Dependencies flow toward |
 |---|---|---|
@@ -112,9 +113,12 @@ assessment and checked consequential source seams before incorporating them.
   2026-10-13; see the [columnar assessment](../columnar/arrow-polars0.glm53m.md)
   and the decision rules in the columnar section below).
 
-Kubeless's extra packages are currently unpublished in the inspected workspace.
-Choose a reviewed repository pin/dependency arrangement when implementing the
-adapter. Reuse carries real costs: owned keys, shared row handles, locks,
+Kubeless's extra packages are currently unpublished. On 2026-10-14 the user
+selected a **sibling path dependency** for development: the state adapter uses
+the narrow view leaves from `../kubeless`. That checkout has since moved to
+version `0.1.0` and newer facade organization; its current source governs the
+adapter rather than the older assessment's `4.2.0` package inventory. Reuse
+carries real costs: owned keys, shared row handles, locks,
 replacement work, and optional retained before/after evidence. A direct borrowed
 consumer should pay none of those materializer costs.
 
