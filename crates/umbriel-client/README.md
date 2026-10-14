@@ -1,13 +1,15 @@
 ---
 type: Reference
 title: Umbriel Tokio Unix client
-description: On-demand one-shot sockets and separately driven bounded subscriptions.
+description: On-demand one-shot sockets, separately driven bounded subscriptions, and a read-only desktop-dump executable/example.
 resource: crates/umbriel-client/README.md
 status: implemented
 generated:
   at: 2026-10-14
-  by: model:openai/gpt-6.1-sol#medium
+  by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
+    title: Add and verify a desktop-dump binary/example over one-shot queries and initial events, preserving raw fields and stating restore limitations
   - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
     title: Implement and correct Unix discovery, request evidence, and bounded subscription ownership; remove source-obvious warm-path work
   - resource: ../umbriel-session/README.md
@@ -20,8 +22,12 @@ sources:
     title: Independent bounded observers and explicit reconnect gaps
   - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/cli/ipc_client.cpp
     title: CLI environment precedence and byte-preserving socket name construction
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/server/ipc_commands.cpp
+    title: Checked available window/workspace/layer/color/tearing fields and the explicit no-keyboard query rejection
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/server/ipc.cpp
+    title: Checked theme and overview payloads available through initial subscription events
 verification:
-  method: Scripted Unix peer tests and paused Tokio time, scoped nextest and doctests, formatting, and all-targets Clippy with warnings denied.
+  method: Scripted Unix peer tests and paused Tokio time; all 44 client tests, two doctests, formatting, and all-targets Clippy; release desktop-dump build and read-only live capture of 29 windows and eight workspaces.
   limits: No live compositor mutation, production deployment, throughput benchmark, state store, or columnar execution.
 ---
 
@@ -54,6 +60,43 @@ async fn query() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Desktop capture tool and example
+
+```sh
+cargo build --release -p umbriel-client --bin umbriel-dump-desktop
+./target/release/umbriel-dump-desktop > desktop.json
+cargo run -p umbriel-client --example desktop_dump -- --socket /path/to/umbriel.sock
+```
+
+[`src/desktop_dump/mod.rs`](src/desktop_dump/mod.rs) is shared tool/example
+composition, not an additional public library API. It uses all seven one-shot
+queries and a short-lived theme/overview subscription, then shuts the source
+down. No actions, application relaunch, state store, or Polars dependency.
+`--timeout-ms` bounds each operation; default is 10000. Normal release builds
+produce `target/release/umbriel-dump-desktop`; other examples require `--examples`
+or `cargo run --example ...` and live under `target/release/examples/`.
+
+The version-1 `umbriel-desktop-dump` JSON format stores query payloads under
+`queries.<wire-name>` and initial event payloads under `events.<event-name>`.
+Each entry has `status: "ok"` and `data`, with monotonic millisecond offsets from
+the capture start. Unknown fields survive typed validation. `submap` can be
+successful null and inventories successful empty arrays; `keyboard-layouts`
+with a `no keyboard` rejection is instead `status: "unavailable"` plus `reason`.
+Other failures abort without partial stdout. Serialization finishes before the
+JSON is written. `protocol_model_revision` names the library model baseline,
+**not** a discovered running-compositor version.
+
+The dump includes all exposed window and layout facts, with `atomic: false` and
+explicit limitations. It is evidence for a future restore planner, **not** a
+complete replay recipe. Output geometry/mode/scale/transform, internal layout
+trees/ratios/column membership/scroll offsets, layer-surface geometry, launch
+commands and application documents/session contents are absent from IPC. IDs and
+PIDs are not durable relaunch identities. Consult the
+[root capture guide](../../README.md#build-an-executable-and-capture-the-desktop)
+for geometry semantics and privacy cautions; the
+[source catalog](../../design/protocol/commands0.glm53m.md#request-catalog) and
+[governing review](../../design/protocol/review0.gpt6a.md) explain the wire boundary.
 
 ## Subscriptions and commands
 
@@ -186,4 +229,8 @@ cargo clippy -p umbriel-client -p umbriel-session --all-targets -- -D warnings
 
 Scripted Unix peers and paused Tokio time cover framing, real exchanges,
 independent delivery, cancellation, lifecycle, and reconnect epochs. No live
-compositor mutation or performance claim is involved.
+compositor mutation or performance claim is involved. Binary integration tests
+add complete capture/raw-field retention, empty inventories, missing keyboard,
+argument/connection failures, remote/decode errors, missing/invalid/lost initial
+events, and subscription cleanup. Read-only live release capture also succeeded;
+no desktop restoration was attempted.

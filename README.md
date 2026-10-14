@@ -1,13 +1,15 @@
 ---
 type: Project
 title: umbriel-rs
-description: Native Rust queries, actions, subscriptions, observed state, and Polars-native batches for the Umbriel compositor.
+description: Native Rust Umbriel protocol libraries, a read-only desktop-dump executable, observations, and Polars-native batches.
 resource: README.md
 status: draft
 generated:
   at: 2026-10-14
-  by: model:openai/gpt-6-astra
+  by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
+    title: Clarify the library goal, add a shipped desktop-dump binary and example, and verify scripted peers and read-only live capture
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
     title: Implement and verify the six-crate library, review measured results and reuse boundaries, and rewrite the usage guide
   - resource: design/architecture/architecture1.gpt6a.md
@@ -43,9 +45,14 @@ the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 - All seven query models, six event families, and **121 typed action paths**.
 - Continuously driven subscriptions with independent bounded observers and
   cancellation-safe command ownership.
-- A native **750 ms stable-active-window** example.
+- A read-only **desktop JSON dump** executable and example.
+- A native **750 ms stable-active-window** example—not the project's goal.
 - Complete snapshot batches, lazy queries, and derived output with provenance.
   **No C Data Interface bridge.**
+
+The goal is a reusable **whole-protocol Rust library**, not just a delayed focus
+watcher. Small tools demonstrate concrete uses of that library; the desktop dump
+is also shipped as a normal Cargo binary.
 
 ## Run from the checkout
 
@@ -56,6 +63,53 @@ the user-selected sibling path dependency.
 Discovery uses `UMBRIEL_SOCKET`, or `XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY`.
 Outside a graphical shell, set `UMBRIEL_SOCKET` to the compositor's socket path.
 The examples below use the native Rust client.
+
+### Build an executable and capture the desktop
+
+```sh
+cargo build --release
+./target/release/umbriel-dump-desktop > desktop.json
+```
+
+For a smaller build that avoids the Polars packages:
+
+```sh
+cargo build --release -p umbriel-client --bin umbriel-dump-desktop
+```
+
+The dump contains **all mapped windows**, including scratchpad windows, with
+IDs, application IDs, titles, PIDs, workspace membership, focus/activation,
+floating state, and geometry. It also captures workspace names/order, output
+assignments, effective layout modes, layers, color/HDR and tearing state
+(including fullscreen state), keyboard layouts, submap, theme, and overview.
+Unknown JSON fields are retained after validating the known payload models.
+
+Use `--socket PATH` to override discovery or `--timeout-ms 10000` to set each
+operation's deadline. As a second runnable example:
+
+```sh
+cargo run -p umbriel-client --example desktop_dump -- > desktop.json
+```
+
+**A capture, not a complete restore recipe.** The JSON declares `atomic: false`,
+records per-payload local observation offsets, and lists missing information.
+Separate queries/events can race. IPC does not expose monitor positions/modes/
+scale/transforms, layout trees/column membership/split ratios/scroll offsets, or
+application launch commands and documents. Window positions are layout targets;
+sizes are committed content geometry. IDs/PIDs are live-session identities,
+not durable application identities. This tool neither relaunches nor moves
+anything. Dumps can contain private window titles; store/share them accordingly.
+
+Payloads live under `queries.<wire-query-name>.data` and
+`events.<event-name>.data`; each has a `status`. A missing physical keyboard is
+explicitly `unavailable` with reason `no keyboard`, not a known-empty snapshot.
+Other query, decode, transport, or initial-event failures exit nonzero without
+publishing partial JSON. Shell redirection itself may still create an empty file.
+
+Cargo examples are **not** built by ordinary `cargo build --release`. Use
+`cargo build --release -p umbriel-client --examples` for the client examples;
+their executables appear under `target/release/examples/`, while the desktop-dump
+binary appears directly under `target/release/`.
 
 ### Report a window after 750 ms of stable activation
 
@@ -175,6 +229,9 @@ Detailed usage and ownership contracts live in the crate guides.
 The assembled implementation passed **152 tests, six doctests, formatting and
 warning-denying Clippy**. The environment overrides keep local Polars builds
 manageable; formatting names our packages to avoid traversing the sibling repo.
+The subsequent desktop-dump addition passed all **44 client tests** (seven new
+binary integration tests), client all-targets Clippy, and a read-only live release
+capture of 29 windows and eight workspaces. This verifies capture, not restoration.
 
 ```sh
 CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \

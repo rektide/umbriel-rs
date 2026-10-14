@@ -12,6 +12,7 @@ tokio = { version = "1.48", features = ["net", "rt", "sync", "time", "macros"] }
 serde = "1"
 sonic-rs = "0.5"
 thiserror = "2"
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
 umbriel-state = { path = "../umbriel-state" }
@@ -23,3 +24,7 @@ shlex = "2.0.1"
 [[example]]
 name = "active_window"
 test = true
+
+[[bin]]
+name = "umbriel-dump-desktop"
+path = "src/bin/dump_desktop.rs"
