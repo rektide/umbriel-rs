@@ -1,4 +1,10 @@
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{
+    Deserialize, Serialize,
+    de::{
+        DeserializeOwned,
+        value::{BorrowedStrDeserializer, Error, StrDeserializer, StringDeserializer},
+    },
+};
 use umbriel_protocol::{
     codec,
     envelope::{Family, Message},
@@ -280,6 +286,18 @@ fn extensible_vocabularies_roundtrip_known_and_unknown_wire_spellings() {
             for spelling in [$($spelling,)+ "future 雪"] {
                 let value = <$ty>::from(spelling);
                 assert_eq!(value.as_str(), spelling);
+                assert_eq!(
+                    <$ty>::deserialize(BorrowedStrDeserializer::<Error>::new(spelling)).unwrap(),
+                    value,
+                );
+                assert_eq!(
+                    <$ty>::deserialize(StrDeserializer::<Error>::new(spelling)).unwrap(),
+                    value,
+                );
+                assert_eq!(
+                    <$ty>::deserialize(StringDeserializer::<Error>::new(spelling.to_owned())).unwrap(),
+                    value,
+                );
                 roundtrip(&value);
             }
         };
@@ -327,4 +345,50 @@ fn extensible_vocabularies_roundtrip_known_and_unknown_wire_spellings() {
             "unknown"
         ]
     );
+}
+
+#[test]
+fn enum_visitors_classify_escaped_known_spellings_and_preserve_unknown_text() {
+    assert_eq!(
+        codec::decode::<ContentType>(br#""n\u006fne""#).unwrap(),
+        ContentType::None
+    );
+    assert_eq!(
+        codec::decode::<LayoutMode>(br#""scr\u006flling""#).unwrap(),
+        LayoutMode::Scrolling
+    );
+    assert_eq!(
+        codec::decode::<TransferFunction>(br#""extended\u0020linear""#).unwrap(),
+        TransferFunction::ExtendedLinear
+    );
+
+    let unknown =
+        codec::decode::<ContentType>(br#""future\u0020\u96ea\ud83e\udda6\n\"\\""#).unwrap();
+    assert_eq!(unknown.as_str(), "future 雪🦦\n\"\\");
+    assert!(matches!(unknown, ContentType::Unknown(_)));
+    roundtrip(&unknown);
+    assert_eq!(ContentType::from(""), ContentType::Unknown(String::new()));
+
+    // Both owned entry paths transfer the original String buffer into Unknown.
+    let incoming = String::from("future owned 雪");
+    let pointer = incoming.as_ptr();
+    let owned = ContentType::deserialize(StringDeserializer::<Error>::new(incoming)).unwrap();
+    assert_eq!(owned.as_str().as_ptr(), pointer);
+    assert_eq!(owned.as_str(), "future owned 雪");
+
+    let incoming = String::from("future constructed 🦦");
+    let pointer = incoming.as_ptr();
+    let owned = ContentType::from(incoming);
+    assert_eq!(owned.as_str().as_ptr(), pointer);
+    roundtrip(&owned);
+
+    for invalid in ["null", "true", "42", "1.5", "[]", "{}"] {
+        assert!(codec::decode::<ContentType>(invalid.as_bytes()).is_err());
+        assert!(codec::decode::<LayoutMode>(invalid.as_bytes()).is_err());
+        assert!(codec::decode::<Layer>(invalid.as_bytes()).is_err());
+        assert!(codec::decode::<HdrMode>(invalid.as_bytes()).is_err());
+        assert!(codec::decode::<PresentationHint>(invalid.as_bytes()).is_err());
+        assert!(codec::decode::<TransferFunction>(invalid.as_bytes()).is_err());
+        assert!(codec::decode::<Primaries>(invalid.as_bytes()).is_err());
+    }
 }

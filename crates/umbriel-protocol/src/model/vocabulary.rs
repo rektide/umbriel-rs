@@ -1,6 +1,9 @@
 use std::fmt;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, Visitor},
+};
 
 macro_rules! identity {
     ($name:ident, $doc:literal) => {
@@ -88,7 +91,10 @@ macro_rules! string_enum {
 
         impl From<&str> for $name {
             fn from(value: &str) -> Self {
-                Self::from(value.to_owned())
+                match value {
+                    $($wire => Self::$variant,)+
+                    _ => Self::Unknown(value.to_owned()),
+                }
             }
         }
 
@@ -100,7 +106,34 @@ macro_rules! string_enum {
 
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                String::deserialize(deserializer).map(Self::from)
+                struct SpellingVisitor;
+
+                impl<'de> Visitor<'de> for SpellingVisitor {
+                    type Value = $name;
+
+                    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        f.write_str("a string")
+                    }
+
+                    fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                        // Includes transient unescaping scratch text: classify before owning.
+                        Ok($name::from(value))
+                    }
+
+                    fn visit_borrowed_str<E: de::Error>(
+                        self,
+                        value: &'de str,
+                    ) -> Result<Self::Value, E> {
+                        self.visit_str(value)
+                    }
+
+                    fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                        // Unknown retains the incoming allocation rather than copying it.
+                        Ok($name::from(value))
+                    }
+                }
+
+                deserializer.deserialize_str(SpellingVisitor)
             }
         }
     };
