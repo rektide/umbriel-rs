@@ -18,6 +18,15 @@ sources:
     title: Sent requests retain reply ownership after waiter cancellation
   - resource: ../../design/architecture/architecture1.gpt6a.md#session-roles-and-command-outcomes
     title: Sans-I/O layer and explicit command uncertainty
+  - resource: ../umbriel-protocol/src/codec.rs
+    title: Existing checked Sonic encoder, decoder, and bounded framing APIs
+  - resource: ../umbriel-protocol/src/envelope.rs
+    title: Existing borrowed Message and event-family API
+  - resource: ../umbriel-protocol/src/request.rs
+    title: Existing typed Request encoder and raw-command escape hatch
+verification:
+  method: 29 deterministic nextest cases, one README doctest, crate fmt check, and all-targets Clippy with warnings denied.
+  limits: No sockets, live compositor probes, timing benchmarks, or runtime adapter were used.
 ---
 
 # Umbriel session core
@@ -56,7 +65,8 @@ assert!(core.eof().unresolved.is_none());
 
 Use the protocol `Framer` for chunks, drain its complete frames through
 `receive`, and handle each effect before reusing framing storage. Call `finish`
-at EOF; report a truncated tail through `protocol_failed`, then `eof`. Adapter
+at EOF; report a truncated tail through
+`protocol_failed(ProtocolFailure::Framing(error.to_string()))`, then `eof`. Adapter
 framing limits and delivery byte/item bounds remain separate policies.
 
 Always call `begin_write` before attempting I/O, then acknowledge **only** actual
@@ -101,6 +111,12 @@ withdrawn. Cancelling an entirely unsent initial subscribe closes that core.
   unknown, not executed or rolled back. Terminal methods are idempotent. Local
   request IDs and receive positions increment checked, never wrap, and are not
   server IDs, cursors, or cross-connection identities.
+
+The single-slot law prevents a cancelled request's late reply from reaching a
+later caller. It cannot detect a server duplicating an already-drained reply
+after the next request has been fully sent: without wire IDs, that envelope is
+indistinguishable from the new request's reply. Extra replies while no slot is
+occupied are detected and terminate the connection.
 
 The adapter must retain this core independently of disposable waiting futures,
 continuously drain subscribed input, and close its socket when terminal appears.

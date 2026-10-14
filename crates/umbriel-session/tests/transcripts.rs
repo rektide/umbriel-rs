@@ -639,10 +639,63 @@ fn framer_transcript_drains_interleaved_frames_before_eof_and_detects_tail() {
     flush(&mut session);
     framer.push(b"{\"ok\":nu").unwrap();
     let error = framer.finish().unwrap_err();
-    session.protocol_failed(ProtocolFailure::Decode(error.to_string()));
+    session.protocol_failed(ProtocolFailure::Framing(error.to_string()));
     assert!(session.eof().unresolved.unwrap().possibly_sent);
     assert!(matches!(
         session.terminal().unwrap().reason,
-        EndReason::Protocol(_)
+        EndReason::Protocol(ProtocolFailure::Framing(_))
     ));
+}
+
+#[test]
+fn fully_written_cancelled_request_drains_before_next_admission() {
+    let mut session = streaming();
+    let id = session.admit(Request::Msg("window-close")).unwrap();
+    flush(&mut session);
+    assert_eq!(
+        session.stop_waiting(id, StopReason::Cancelled).unwrap(),
+        StopDisposition::DrainRequired
+    );
+    assert!(session.outbound().is_empty());
+    assert!(matches!(
+        session.admit(Request::Query(Query::Windows)),
+        Err(Error::Busy)
+    ));
+    assert!(matches!(session.receive(OK).unwrap(), Effect::Reply {
+        id: actual, waiter: Waiter::Stopped(StopReason::Cancelled), ..
+    } if actual == id));
+    session.admit(Request::Query(Query::Windows)).unwrap();
+}
+
+#[test]
+fn keyboard_can_be_observed_later_after_empty_acceptance() {
+    let mut session = Session::subscription(&[Family::KeyboardLayout], LIMIT).unwrap();
+    flush(&mut session);
+    session.receive(b"").unwrap();
+    assert!(matches!(
+        session
+            .receive(br#"{"event":"keyboard_layout","data":{"names":["us"],"current_index":0}}"#)
+            .unwrap(),
+        Effect::Event {
+            accepted_subscription: None,
+            ..
+        }
+    ));
+    assert_eq!(
+        session.family_status(Family::KeyboardLayout),
+        FamilyStatus::Observed
+    );
+}
+
+#[test]
+fn busy_admission_never_overwrites_existing_request_bytes() {
+    let mut session = streaming();
+    let id = session.admit(Request::Msg("window-close")).unwrap();
+    let bytes = session.outbound().to_vec();
+    assert!(matches!(
+        session.admit(Request::Msg("different")),
+        Err(Error::Busy)
+    ));
+    assert_eq!(session.pending_request(), Some(id));
+    assert_eq!(session.outbound(), bytes);
 }

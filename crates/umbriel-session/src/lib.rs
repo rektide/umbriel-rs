@@ -3,6 +3,7 @@
 //! Adapters drain framed input through [`Session::receive`], handle borrowed
 //! effects synchronously, and retain this session independently of waiting futures.
 #![forbid(unsafe_code)]
+#![doc = include_str!("../README.md")]
 
 use thiserror::Error;
 use umbriel_protocol::{
@@ -52,7 +53,7 @@ pub enum Waiter {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopDisposition {
-    /// No write was attempted or acknowledged; the request no longer owns a reply.
+    /// No bytes were sent and no write is unresolved; reply ownership is released.
     Withdrawn,
     /// The wire slot remains occupied until a reply, acceptance, or close.
     DrainRequired,
@@ -70,7 +71,11 @@ pub struct UnresolvedRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolFailure {
     Decode(String),
-    FrameTooLong { limit: usize },
+    /// Adapter framing failure, such as an unterminated EOF tail.
+    Framing(String),
+    FrameTooLong {
+        limit: usize,
+    },
     Unexpected(Unexpected),
     LocalPositionExhausted,
 }
@@ -351,7 +356,8 @@ impl Session {
     }
 
     /// Route exactly one complete frame, excluding LF. No payload is retained.
-    /// Invalid remote input terminates the connection; API misuse does not.
+    /// Invalid input in the current protocol state terminates the connection.
+    /// Admission and write-accounting errors do not terminate it.
     pub fn receive<'a>(&mut self, frame: &'a [u8]) -> Result<Effect<'a>, Error> {
         self.ensure_live()?;
         if frame.len() > self.frame_limit {
