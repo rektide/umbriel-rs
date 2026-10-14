@@ -10,9 +10,9 @@ generated:
 sources:
   - resource: opencode://ses_ec7597a7affeFbugqOy35TD50A
     title: Single read-only live capture, sanitization, fixture generation, and the benchmark session
-  - resource: ../../../design/performance/bench0.glm53m.md
+  - resource: ../../../../design/performance/bench0.glm53m.md
     title: Baseline report consuming these fixtures
-  - resource: ../../../design/protocol/commands0.glm53m.md
+  - resource: ../../../../design/protocol/commands0.glm53m.md
     title: Event frame shape, alphabetical key order, and query catalog
 ---
 
@@ -32,7 +32,7 @@ connections (`{"cmd":"windows"}`, `{"cmd":"workspaces"}`) on
 reply. No `subscribe`, no `msg`, no repeated connections. Raw replies are
 preserved only in gitignored `.test-agent/performance-baseline/raw/` and are
 never committed; their hashes are recorded in the
-[baseline report](../../../design/performance/bench0.glm53m.md).
+[baseline report](../../../../design/performance/bench0.glm53m.md).
 
 ### What sanitization changes
 

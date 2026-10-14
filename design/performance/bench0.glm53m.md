@@ -1,7 +1,7 @@
 ---
 type: Report
 title: Sonic-only protocol performance baseline
-description: First measured Criterion baseline of umbriel-protocol framing, envelope, typed-model, and selected-projection decode paths on sanitized live and scaled synthetic fixtures, with allocation accounting.
+description: First measured Criterion baseline of umbriel-protocol framing, envelope, typed-model, and selected-projection decode paths on sanitized live and scaled synthetic fixtures, with allocation accounting; revised after review corrections.
 resource: design/performance/bench0.glm53m.md
 status: draft
 tags: [umbriel, performance, benchmarks, sonic, baseline]
@@ -10,21 +10,23 @@ generated:
   by: model:zai-coding-plan/glm-5.3#max
 sources:
   - resource: opencode://ses_ec7597a7affeFbugqOy35TD50A
-    title: Live capture, sanitization, fixture generation, bench implementation, benchmark session, allocation probes, and this report
+    title: Live capture, sanitization, fixtures, benches, benchmark sessions, allocation probes, review corrections of serde-borrow, SIMD facts, ratios, copying, and statistics, and this report
   - resource: json0.gpt6a.md
-    title: Sonic selection context, source-derived scratch and lazy-path facts, and the measurement design this baseline follows
+    title: Sonic selection context, source-derived scratch facts, the serde(borrow) warning this baseline initially violated, and the measurement design
   - resource: ../protocol/commands0.glm53m.md
-    title: Wire shapes, event frame key order, and live-session size reference
+    title: Wire shapes, data-before-event key order, and live-session size reference
   - resource: ../architecture/architecture1.gpt6a.md
     title: Sonic-first direction and the measurement questions this baseline serves
   - resource: ../../crates/umbriel-protocol/README.md
     title: Benchmarked codec, envelope, and typed-event surfaces
   - resource: ../../crates/umbriel-protocol/benches/fixtures/README.md
     title: Committed fixtures, provenance, and exact sanitization rules
+  - resource: https://docs.rs/crate/sonic-simd/0.1.4/source/src/lib.rs
+    title: Resolved 0.1.4 source for the sse2/avx2/avx512 selection and v256/v512 pair-composition facts
   - resource: https://docs.rs/crate/sonic-rs/0.5.10/source/src/serde/de.rs
     title: Resolved 0.5.10 source checked for per-call scratch and string borrowing branches
-  - resource: https://docs.rs/crate/sonic-simd/0.1.4/source/src/lib.rs
-    title: Resolved 0.1.4 source checked for compile-time target-feature SIMD guards
+  - resource: ../../crates/umbriel-protocol/src/model/vocabulary.rs
+    title: string_enum Deserialize always allocating a transient String before spelling dispatch
 ---
 
 # Sonic-only protocol performance baseline
@@ -36,22 +38,29 @@ ticket **umbrs-protocol-benchmarks**. Sonic is the selected backend
 ([json0](json0.gpt6a.md), [architecture1](../architecture/architecture1.gpt6a.md));
 nothing here compares parsers or reopens that choice. Library behavior is
 unchanged — all new code lives in `crates/umbriel-protocol/benches/`, its
-fixtures, and this report. The benchmarked objects:
+fixtures, and this report. This revision corrects first-draft errors found in
+parent review: a missing `#[serde(borrow)]` on the projection's `Cow` fields,
+false scalar-on-x86 SIMD claims, wrong ratio arithmetic, a false
+zero-copy framing claim, mislabeled statistics and throughput normalization,
+and mislabeled allocation rows. The benchmarked objects:
 
 1. **Reusable framing** (`codec::Framer`) under complete and chunked input,
    plus isolated drain and cold-growth shapes. No JSON is parsed.
 2. **Direct full-model decoding** (`codec::decode::<Windows/Workspaces>`) on
    the payload bytes of real event frames.
 3. **The real lazy envelope path** (`Message::decode`) and its typed
-   (`model::decode_event`) and selected borrowed-projection extensions —
-   exactly the paths a consumer uses.
+   (`model::decode_event`) and selected-projection extensions — exactly the
+   paths a consumer uses.
 
 Matched output semantics where paths are compared: for every fixture, the
 startup code (never timed) asserts `envelope+typed` and `model_direct`
 produce equal owned models, and that the selected projection agrees with the
-full model on `id`/`active`/`title`. The selected projection is deliberately
-narrower, so it is reported, not treated as equivalent. Fixture loading is
-excluded from all timed loops.
+full model on `id`/`active`/`title` **and** decodes `Cow::Borrowed` for
+unescaped values / `Cow::Owned` for escaped ones. The paths do **not**
+consume the same input: the envelope paths consume and validate the whole
+frame; `model_direct` consumes only the extracted payload span. Throughput
+below is therefore labeled per input. Fixture loading is excluded from all
+timed loops.
 
 ## Build and environment identity
 
@@ -60,22 +69,47 @@ One clearly identified build; no portable/native split yet.
 | Setting | Value |
 |---|---|
 | rustc / cargo | 1.101.0-nightly (5c543b0b8 / 3d7cf6e93, 2026-09-25/29) |
-| CPU | AMD Ryzen 7 5800X, 8C/16T; `amd_pstate=active`, governor `powersave`, boost enabled |
-| System load during session | load average ≈ 3–4; no concurrent cargo builds during timed runs |
+| CPU | AMD Ryzen 7 5800X, 8C/16T (Zen 3, AVX2-capable, no AVX-512); `amd_pstate=active`, governor `powersave`, boost enabled |
+| System load during sessions | load average ≈ 3–4; no concurrent cargo builds during timed runs |
 | Profile | `cargo bench` = release defaults (opt-level 3, no LTO, 16 codegen units, no debug info); no `[profile]` overrides anywhere in the workspace |
 | Target flags | `RUSTFLAGS` unset → portable x86-64 baseline (no `-C target-cpu`) |
 | Locked versions | sonic-rs 0.5.10, sonic-simd 0.1.4, memchr 2.8.3, criterion 0.8.2 (dev-dependency, added via `cargo add`) |
-| Statistics | Criterion: sample size 100, warm-up 500 ms, measurement 2 s per bench; tables below show medians with Criterion's slope CI in the source results files (spread was within ±2–7 % on this run) |
 
-Source-derived build facts (resolved registry sources, not re-measured
-here): sonic-simd compiles its SIMD structural helpers only behind
-compile-time `target_feature`s (NEON on aarch64, simd128 on wasm32), so on
-this portable x86-64 build those paths are scalar; UTF-8 validation through
-simdutf8 is runtime-dispatched. sonic-rs's Serde deserializer allocates a
-fresh empty `scratch: Vec<u8>` per `from_str`/`from_slice` call
-(de.rs:30,41), growing only when an escaped string is decoded
-(de.rs:476,634). Both facts are visible in the measured allocation counts
-below.
+Source-derived build facts (read from the resolved registry sources; no
+runtime ranking is claimed from them): sonic-simd selects its vector widths
+at compile time (`src/lib.rs`). The 128-bit layer picks SSE2 first
+(`target_feature = "sse2"`, lines 9–11) — and **x86-64 baseline guarantees
+SSE2**, so this portable build compiles SSE2 SIMD structural paths, not
+scalar code; NEON (aarch64) and wasm128 follow, with a scalar `v128` fallback
+only for targets with none of them. The 256-bit layer uses the `avx2` module
+when `target_feature = "avx2"` (lines 26–28); otherwise `v256.rs` composes
+`Simd256` **as pairs of the selected 128-bit type** — on this portable build
+that means 256-bit-wide algorithms execute as two SSE2 lanes. The 512-bit
+layer requires both `target_feature = "avx512f"` and sonic-rs's opt-in
+`avx512` cargo feature; otherwise `v512.rs` composes 512-bit ops as pairs of
+the selected 256-bit type (itself possibly paired SSE2). Consequences: a
+`-C target-cpu=native` build on this CPU would enable genuine 256-bit AVX2
+for sonic's structural algorithms (not merely UTF-8 validation frequency
+selection in simdutf8, which is runtime-dispatched and separate); AVX-512
+paths would stay composed unless the opt-in feature is also enabled. This
+native variant is **unmeasured** here.
+
+sonic-rs's Serde deserializer allocates a fresh empty `scratch: Vec<u8>` per
+`from_str`/`from_slice` call (de.rs:30,41), growing only when an escaped
+string is decoded (de.rs:476,634). Both facts are visible in the measured
+allocation counts below.
+
+## Statistic and normalization conventions
+
+All timing numbers below are the **median** from Criterion's saved
+`estimates.json` (95 % confidence intervals preserved in the saved results
+under `.test-agent/performance-baseline/`; scratch also holds the console
+slope output). Criterion's console point estimate is a slope, not a median,
+and differs slightly (e.g. `model_direct` on live-windows: console slope
+23.66 µs vs median 21.80 µs). Throughput is labeled per input: envelope
+paths are normalized to **full frame bytes** (envelope keys included);
+`model_direct` is normalized to its actual input, the **payload span**, with
+the frame-normalized figure in parentheses for cross-reference.
 
 ## Fixture provenance
 
@@ -118,168 +152,227 @@ Streams: 16× live lines (134,000 B), 4× synthetic-200 (247,000 B). Warm =
 one reused `Framer` across iterations (steady-state receive, capacity
 retained, compaction included). Cold = fresh `Framer` per iteration.
 
-| Bench | Median time | Throughput |
+| Bench | Median | Throughput |
 |---|---|---|
-| receive live-windows×16, complete | 5.19 µs | 24.06 GiB/s |
-| receive live-windows×16, 4096 B chunks | 4.38 µs | 28.48 GiB/s |
-| receive live-windows×16, 64 B chunks | 29.20 µs | 4.27 GiB/s |
-| receive live-workspaces×16, complete | 647 ns | 25.58 GiB/s |
-| receive synthetic-200×4, complete | 9.69 µs | 23.75 GiB/s |
-| receive synthetic-200×4, 4096 B chunks | 7.96 µs | 28.92 GiB/s |
-| cold-complete live-windows×16 | 5.26 µs | 23.71 GiB/s |
-| cold-complete synthetic-200×4 | 9.69 µs | 23.75 GiB/s |
-| drain-only live-windows×16 | 1.68 µs | 74.46 GiB/s |
-| drain-only synthetic-200×4 | 2.63 µs | 87.38 GiB/s |
+| receive live-windows×16, complete | 5.164 µs | 24.17 GiB/s |
+| receive live-windows×16, 4096 B chunks | 4.317 µs | 28.91 GiB/s |
+| receive live-windows×16, 64 B chunks | 28.54 µs | 4.37 GiB/s |
+| receive live-workspaces×16, complete | 642 ns | 25.78 GiB/s |
+| receive synthetic-200×4, complete | 9.711 µs | 23.69 GiB/s |
+| receive synthetic-200×4, 4096 B chunks | 7.816 µs | 29.43 GiB/s |
+| cold-complete live-windows×16 | 5.199 µs | 24.00 GiB/s |
+| cold-complete synthetic-200×4 | 9.517 µs | 24.17 GiB/s |
+| drain-only live-windows×16 | 1.586 µs | 78.69 GiB/s |
+| drain-only synthetic-200×4 | 2.462 µs | 93.42 GiB/s |
 
-Cold ≈ warm at these sizes (single exact-size capacity growth; see
-allocations). 4 KiB chunks are ~15–20 % cheaper per byte than one huge push
-(smaller per-call scan ranges); 64 B chunks collapse to 4.27 GiB/s from
-per-chunk call overhead — 131 chunks per live line ≈ 14 ns per push+drain
-turn. Per real frame, framing a live windows line costs ≈ 0.32 µs.
+Cold ≈ warm at these sizes (see allocations: one exact-size capacity growth).
+4 KiB chunks are ~15–20 % cheaper per byte than one huge push (smaller
+per-call scan ranges); 64 B chunks collapse to 4.37 GiB/s from per-chunk call
+overhead — 131 chunks per live line ≈ 14 ns per push+drain turn. Per real
+frame, framing a live windows line costs ≈ 0.32 µs. Note the copying model:
+`push` always copies incoming bytes into the Framer's contiguous storage
+(`extend_from_slice`), and compaction moves unconsumed bytes when triggered;
+the reused-`Framer` result below shows **zero allocator calls, not zero
+copying** — one input-copy per byte plus occasional compaction moves is the
+designed cost of reusable borrowed-frame storage.
 
 ### Decode (whole wire frames, framing excluded)
 
-| Fixture (frame B) | envelope | envelope+typed | model_direct | envelope+selected |
+`model_direct` consumes the payload span only (e.g. 8,347 of 8,374
+live-windows bytes); the other paths consume and validate the full frame.
+
+| Fixture | envelope (frame-norm) | envelope+typed (frame-norm) | model_direct (payload-norm) | envelope+selected (frame-norm) |
 |---|---|---|---|---|
-| live-windows (8,374) | 13.74 µs / 581 MiB/s | 37.33 µs / 214 MiB/s | 23.66 µs / 338 MiB/s | 32.24 µs / 248 MiB/s |
-| synthetic-10 (3,125) | 5.47 µs / 545 MiB/s | 14.09 µs / 211 MiB/s | 7.99 µs / 373 MiB/s | 12.47 µs / 239 MiB/s |
-| synthetic-50 (15,446) | 26.51 µs / 556 MiB/s | 64.83 µs / 227 MiB/s | 42.11 µs / 350 MiB/s | 57.67 µs / 255 MiB/s |
-| synthetic-200 (61,749) | 102.92 µs / 572 MiB/s | 273.20 µs / 216 MiB/s | 161.23 µs / 365 MiB/s | 253.40 µs / 232 MiB/s |
-| live-workspaces (1,110) | 2.19 µs / 482 MiB/s | 5.41 µs / 196 MiB/s | 3.45 µs / 307 MiB/s | — |
+| live-windows (8,374 B) | 13.71 µs / 582.5 MiB/s | 35.84 µs / 222.8 MiB/s | 21.80 µs / 365.1 MiB/s (366.3 frame) | 28.89 µs / 276.4 MiB/s |
+| synthetic-10 (3,125 B) | 5.49 µs / 542.9 MiB/s | 12.80 µs / 232.9 MiB/s | 7.59 µs / 389.5 MiB/s (392.8 frame) | 11.12 µs / 267.9 MiB/s |
+| synthetic-50 (15,446 B) | 25.30 µs / 582.2 MiB/s | 63.58 µs / 231.7 MiB/s | 40.33 µs / 364.6 MiB/s (365.2 frame) | 53.33 µs / 276.2 MiB/s |
+| synthetic-200 (61,749 B) | 101.27 µs / 581.5 MiB/s | 254.63 µs / 231.3 MiB/s | 156.90 µs / 375.2 MiB/s (375.3 frame) | 210.50 µs / 279.8 MiB/s |
+| live-workspaces (1,110 B) | 2.10 µs / 503.2 MiB/s | 5.41 µs / 195.8 MiB/s | 3.26 µs / 315.8 MiB/s (324.5 frame) | — |
 
-Marginal cost of the second pass (path minus `envelope`), against a direct
-model parse on the same payload:
-
-| Fixture | typed second pass | selected second pass |
-|---|---|---|
-| live-windows | 23.59 µs ≈ 1.00 × direct | 18.50 µs ≈ 0.78 × direct |
-| synthetic-10 | 8.62 µs ≈ 1.08 × | 7.00 µs ≈ 0.87 × |
-| synthetic-50 | 38.32 µs ≈ 0.91 × | 31.16 µs ≈ 0.74 × |
-| synthetic-200 | 170.28 µs ≈ 1.06 × | 150.48 µs ≈ 0.93 × |
+Ratios (medians): **total `envelope+typed` is 1.58–1.69 × the direct payload
+decode** across fixtures (live 1.64×). The envelope stage is 39–43 % of the
+typed total. The marginal typed second pass — `envelope+typed` minus
+`envelope`, i.e. the re-parse of the payload span including its second UTF-8
+check — costs **0.95–1.02 ×** a direct parse of the same payload: a full
+parse, not a discounted re-scan. The selected projection's marginal second
+pass costs 0.70–0.74 × a direct parse, and its total is 0.81–0.87 × the
+typed total (13–19 % less).
 
 ### Allocations (separate counting-allocator binary; counting never timed)
 
-Median over 200 armed calls; first call after process start was identical in
-every row (malloc arenas already warmed by fixture loading).
+Median over 200 armed calls; "steady" describes the measured path, not
+allocator warmth — the process allocator is already warmed by fixture
+loading before the first armed call. First call after process start was
+identical in every row.
 
 | Path | live-windows (29) | synthetic-50 |
 |---|---|---|
 | envelope (`Message::decode`) | **0 calls / 0 B** | 0 calls / 0 B |
 | envelope+typed | 149 calls / 13,917 B | 269 calls / 29,282 B |
 | model_direct | 149 calls / 13,917 B | 269 calls / 29,282 B |
-| envelope+selected | 62 calls / 4,795 B | 108 calls / 9,792 B |
-| framing, fresh `Framer`, complete push 134,000 B | 1 call / 134,000 B | — |
-| framing, reused `Framer`, second full turn | **0 calls / 0 B** | — |
+| envelope+selected, `#[serde(borrow)]` | **4 calls / 3,360 B** | 21 calls / 7,534 B |
+| envelope+selected, no `borrow` (**misconfiguration comparison**) | 62 calls / 4,795 B | 108 calls / 9,792 B |
+| framing, cold/fresh `Framer`, first complete turn (134,000 B) | 1 call / 134,000 B | — |
+| framing, **reused** `Framer`, second full turn | **0 calls / 0 B** | — |
 
-Follow-up probe (scratch, same counting method) decomposing the projection
-count on live-windows: `Vec<{id: &str}>` = 4 calls / 960 B (pure `Vec`
-growth); `Vec<{id: Cow<str>}>` = 33 calls / 2,368 B — **one allocation per
-`Cow` field, byte-identical to a `String` field**, even though the live
-fixture's strings are unescaped and sonic's parser provably returns borrowed
-input slices for them (parser.rs:998–999). So on this path serde's `Cow`
-glue pays the owned cost anyway; only a plain `&'a str` projection (or a
-borrow-first visitor like the envelope's internal `Text`) is allocation-free.
+The selected projection's `Cow` fields carry field-level `#[serde(borrow)]`;
+startup verification (and a scratch probe) confirms 29/29 borrowed ids and
+29/29 borrowed titles on live-windows and 50/50 borrowed ids with 37/50
+borrowed titles (the 13 escaped ones) on synthetic-50. With the annotation,
+live-windows decodes the whole projection with only the 4 `Vec`-growth
+allocations; synthetic-50's 21 calls decompose as ≈ 5 `Vec` growth + 13
+owned escaped titles + scratch growth during unescaping (split consistent
+with counts; not individually instrumented). The **no-`borrow` rows are the
+first draft's numbers, preserved deliberately**: plain `Cow<'a, str>` without
+the annotation deserializes every field owned — exactly like `String` —
+which was my bench misconfiguration, not a Sonic/Serde limitation. The
+timing effect of the annotation was measured by re-running only the selected
+rows: medians fell 5–11 % (live 31.17 → 28.89 µs; synthetic-200 232.5 →
+210.5 µs).
+
+The full-model rows also decompose cleanly by count. live-windows' 149 calls
+= 29 windows × 5 + 4 `Vec` growth: four owned model strings per row (`id`,
+`workspace`, `app_id`, `title`; `scratchpad`/`xdg_tag` are empty and do not
+allocate) **plus one transient `String` per `content_type`** — every live
+value is the known spelling `"none"`, yet the allocation happens because
+[model/vocabulary.rs:101-105](../../crates/umbriel-protocol/src/model/vocabulary.rs)
+deserializes every `string_enum` through `String::deserialize(...).map(Self::from)`,
+allocating first and dispatching the spelling afterwards. Attribution is by
+count fit (149 = 29×5 + 4 exactly), not per-field instrumentation; see
+finding 6 and its experiment.
 
 ## Findings
 
 1. **Framing is not the problem.** Complete-input framing runs at 24–29
-   GiB/s (memchr scanning plus compaction); one live windows line frames in
-   ≈ 0.32 µs — 2.4 % of even the cheapest full-frame decode (13.74 µs). The
-   reused-`Framer` steady turn allocates nothing and copies nothing but its
-   own compaction, confirming the design goal of reusable receive storage.
-2. **The lazy envelope is one full validation pass at 482–581 MiB/s and zero
-   allocations.** Throughput is nearly flat from 10 to 200 windows (545 →
-   572 MiB/s); no superlinear behavior at these sizes. Whole-frame
-   validation — UTF-8 check, structural skip of the payload, trailing-input
-   enforcement — is the entire cost.
-3. **The typed path pays twice.** `envelope+typed` costs 2.2–2.7 × the
-   direct model parse of the same payload: the envelope validates the whole
-   frame lazily, then `decode_event` re-parses the payload span through
-   `codec::decode` (including a second UTF-8 check of that span). The second
-   pass costs 0.91–1.08 × a direct parse — a full parse, not a discount
-   re-scan.
-4. **The selected projection wins, but modestly, and its `Cow` fields
-   allocate.** Total `envelope+selected` beats `envelope+typed` by 7–14 %
-   across fixtures while decoding 3 of 17 fields; its marginal second pass
-   is 0.74–0.93 × a direct parse. Measured allocations show 2 per row from
-   the two `Cow` fields even on unescaped input; `&'a str` fields would be
-   free (probe above).
-5. **Model decoding scales linearly** at 307–373 MiB/s. The live fixture
-   (all-unescaped strings) parses at 338 MiB/s and the escape-bearing
-   synthetic fixtures at 350–373 MiB/s; the difference is small and
-   confounded by fixture composition (title lengths, field mix), so no
-   escape-cost claim is made beyond allocation counts.
+   GiB/s; one live windows line frames in ≈ 0.32 µs — 2.4 % of even the
+   cheapest full-frame decode (13.71 µs). The reused-`Framer` turn makes
+   zero allocator calls but still copies every input byte into storage once
+   (plus periodic compaction) — that single copy is the designed price of
+   borrowed frame slices, not overhead to eliminate.
+2. **The lazy envelope is one full validation pass at 503–583 MiB/s
+   (frame-normalized) and zero allocations.** Throughput is nearly flat from
+   10 to 200 windows (542.9 → 581.5 MiB/s); no superlinear behavior at these
+   sizes. Whole-frame validation — UTF-8 check, structural skip of the
+   payload, trailing-input enforcement — is the entire cost.
+3. **The typed path pays for one extra full parse.** Total
+   `envelope+typed` is 1.58–1.69 × the direct payload decode; its envelope
+   stage (39–43 % of the total) validates the whole frame lazily, then
+   `decode_event` re-parses the payload span through `codec::decode`
+   (including a second UTF-8 check of that span) at 0.95–1.02 × the cost of
+   a direct parse.
+4. **The selected projection with `#[serde(borrow)]` is the cheapest
+   consumer path measured: 13–19 % under the typed total, 0.70–0.74 × a
+   direct parse for its second pass, and effectively allocation-free on
+   unescaped input** (4 `Vec`-growth calls on live-windows). Escaped values
+   correctly decode `Cow::Owned`. Forgetting the annotation silently pays
+   one allocation per `Cow` field and 5–11 % more time — the exact trap
+   [json0](json0.gpt6a.md) warned about; the fix is the standard serde
+   attribute, not a new library helper.
+5. **Direct model decoding runs at 315.8–389.5 MiB/s of payload** across
+   fixtures. The live fixture's all-unescaped strings and the synthetic
+   escape-bearing mixes land in the same band, so no escape throughput
+   claim is made beyond the allocation counts.
+6. **Known enum spellings still cost one transient allocation each.**
+   Source ([model/vocabulary.rs:101-105](../../crates/umbriel-protocol/src/model/vocabulary.rs)):
+   `string_enum`'s `Deserialize` runs `String::deserialize` and only then
+   dispatches the spelling, so a known `content_type`/`layout`/`layer`
+   value allocates a `String` and immediately discards it. The counting
+   data fit this exactly on live-windows (149 = 29×5 + 4; the fifth
+   per-row allocation is `content_type`, whose live values are all known).
+   This is model-layer cost, separate from the projection's missing-borrow
+   misconfiguration, and avoidable in principle — see the experiments.
 
 ## Limits and assumptions
 
 - Single machine, single session, `powersave` governor, background load
   ≈ 3–4: absolute numbers are a baseline anchor, not a record; Criterion's
-  CIs (in the saved results files) carried ±2–7 %.
+  95 % CIs carried ±2–7 %.
 - Warm-state assumptions: decode benches decode the same preloaded bytes
   each iteration (Sonic input is immutable, so no restore is needed);
   framing warm benches reuse one `Framer`; sonic's per-call scratch `Vec`
   is constructed inside every measured call (source-derived), and grows
-  only when escaped strings are decoded — escaped and unescaped fixtures
-  differ in entry count, so their allocation totals are not directly
-  comparable row-to-row.
-- One portable x86-64 build. A `-C target-cpu=native` variant was not run;
-  per the source facts above it mainly affects simdutf8 validation
-  frequency selection, not sonic's (scalar on x86) structural paths.
+  only when escaped strings are decoded. Escaped and unescaped fixtures
+  differ in entry count, so allocation totals are not comparable row-to-row
+  across fixtures.
+- One portable x86-64 build with SSE2 structural paths (see build facts);
+  the native variant is unmeasured and no runtime ordering between them is
+  claimed.
 - The live fixture reflects one session state (29 windows, two output
   groups, no escaped titles, one multibyte title). Escape-bearing
   distributions come from the invented synthetic mix (¼ escaped, ¼
   multibyte, ½ plain).
 - Allocation counts are allocator call counts and requested bytes (realloc
-  counted once at new size), not peak RSS or copy volume; `first-call` rows
-  describe a process already warmed by fixture loading.
-- Chunked framing used size-aligned splits from byte 0; split positions
-  inside escapes/UTF-8 are a decode-correctness concern already covered by
-  tests, and framing itself is LF-only, so this does not bias framing
-  numbers.
+  counted once at new size), not peak RSS or copy volume; the Framer rows
+  show allocator calls, which is not the same as zero byte copying.
+- Chunked framing used size-aligned splits from byte 0; framing is LF-only,
+  so split position cannot bias framing numbers.
 
 ## Actionable bottleneck and next experiments
 
 **Decode dominates framing by ~40–90 × per byte; within decode, the typed
-event path's double pass is the one measured, structural cost worth
+event path's second payload pass is the one measured, structural cost worth
 attacking.** No core code was changed. Concrete next experiments, in order
 of expected value:
 
-1. **Single-pass typed envelope**: let the envelope's map visitor deserialize
-   known-family payloads directly (the `data` value drives a typed
-   deserializer seeded by the already-seen `event` key, or the visitor
-   retains the raw span and the typed decode replaces the lazy validation
-   pass). Whole-frame validation semantics must be preserved (json0's
-   warning about finalization stands). Measured ceiling for the win: the
-   live `envelope+typed` 37.33 µs contains a ≈ 23.6 µs second parse that a
-   fused path could largely absorb into the first.
-2. **Borrowed-first projection fields**: the envelope's `Text` visitor
-   pattern applied to narrow projections (try `visit_borrowed_str`, own only
-   on escape) would remove the measured 1-alloc-per-`Cow`-field cost while
-   keeping escape correctness. Requires a small projection helper in the
-   crate, not a benchmark change.
-3. **Native-build comparison run** (cheap, same benches, `RUSTFLAGS=-C
-   target-cpu=native`) if absolute x86 throughput ever becomes the target.
+1. **Single-pass typed envelope.** A fused path must still *build* the typed
+   model, so it cannot inherit envelope-only cost; the realistic target is
+   to absorb the separate validation pass. Measured opportunity estimate:
+   `envelope+typed` minus `model_direct` ≈ 14.0 µs on live-windows (≈ 38 %
+   of the typed total; 38–42 % across fixtures) — an upper-bound estimate of
+   what a single traversal could save, **not a proven achievable ceiling**.
+   Constraint: on this wire `data` precedes `event` (alphabetical server
+   key order), so an event-first-seeded typed deserializer cannot assume
+   family knowledge before the payload arrives; the visitor must retain the
+   raw payload span and late-bind, or decode without family preselection.
+   Whole-frame validation semantics (json0's finalization warning) must be
+   preserved.
+2. **Use `#[serde(borrow)]` in consumer Cow projections.** No library
+   change needed; the misconfigured comparison above quantifies the cost of
+   forgetting it. The benches' startup assertions are the template for
+   verifying Borrowed/Owned branch behavior.
+3. **Borrow-aware `string_enum` deserialization** (library-side, kept
+   stable until this baseline lands): deserialize by matching the spelling
+   first — e.g. a visitor over `&str`/borrowed input that constructs the
+   known variant directly and falls back to `Unknown(String)` only for
+   unrecognized spellings. Supported claims: the source shows the
+   allocation is unconditional today, and the counting fit shows one such
+   call per enum field per row, so removing it bounds the saving at one
+   allocator call per known enum value per row (≈ 29 of 149 calls, ~20 %,
+   on live-windows). No throughput improvement is claimed — that would need
+   its own measurement after any change.
+4. **Native-build comparison run** (same benches, `RUSTFLAGS=-C
+   target-cpu=native`) if absolute x86 throughput becomes the target: per
+   the source facts it switches sonic-simd's 256-bit structural algorithms
+   from paired SSE2 lanes to AVX2 (and simdutf8's runtime dispatch picks
+   wider validation); unmeasured here.
 
 ## Reproduction
 
 ```sh
 cargo bench -p umbriel-protocol --bench framing
 cargo bench -p umbriel-protocol --bench decode
-cargo bench -p umbriel-protocol --bench allocations   # plain binary, prints table
+cargo bench -p umbriel-protocol --bench allocations            # plain binary, prints table
+cargo bench -p umbriel-protocol --bench decode -- selected     # selected rows only
+cargo bench -p umbriel-protocol --bench allocations -- framing # allocation rows filtered
 ```
 
-Verified alongside the session: `cargo fmt -p umbriel-protocol --check`,
+Verified alongside the sessions: `cargo fmt -p umbriel-protocol --check`,
 `cargo clippy -p umbriel-protocol --all-targets -- -D warnings`,
 `cargo nextest run -p umbriel-protocol` (58/58 pass; no timing gates added).
-Raw outputs, provenance record, and the allocation probe live in gitignored
+The `allocations` bench binary is the workspace's one deliberate `unsafe`
+exception — a forwarding `GlobalAlloc` impl confined to benchmark
+instrumentation; the production crates keep `#![forbid(unsafe_code)]`. Raw
+outputs, medians, provenance, and the allocation probe live in gitignored
 `.test-agent/performance-baseline/`.
 
 ## Cross-references
 
 - [JSON research](json0.gpt6a.md) — Sonic selection, scratch/borrowing
-  facts, and the three-layer measurement design this implements.
+  facts (including the `serde(borrow)` warning), and the three-layer
+  measurement design this implements.
 - [Commands research](../protocol/commands0.glm53m.md) — wire shapes, key
-  order, and the earlier live probe this capture matches.
+  order (`data` before `event`), and the earlier live probe this capture
+  matches.
 - [Architecture](../architecture/architecture1.gpt6a.md) — the Sonic-first,
   measure-when-questions-arise direction; this is the first such
   measurement.

@@ -1,6 +1,13 @@
 //! Decode benchmarks on whole wire frames. Framing is not measured here.
 //!
-//! Four paths, all consuming the same frame bytes:
+//! Throughput normalization: every bench charges the **full wire-frame
+//! bytes** (envelope keys included) so rows are comparable per delivered
+//! frame. Note the inputs differ: the envelope paths consume and validate
+//! the whole frame; `model_direct` consumes only the payload span extracted
+//! at startup (its own-input throughput is payload bytes / time, higher than
+//! the frame-normalized figure).
+//!
+//! Four paths:
 //!
 //! - `envelope`: `Message::decode` — the real lazy envelope with whole-frame
 //!   validation; payload stays a `LazyValue`.
@@ -11,10 +18,12 @@
 //!   extracted once at startup — direct full-model decoding without envelope
 //!   handling. Produces the same owned model as `envelope+typed` (asserted at
 //!   startup: matched output semantics).
-//! - `envelope+selected`: `Message::decode` then a narrow borrowed projection
+//! - `envelope+selected`: `Message::decode` then a narrow projection
 //!   (`id`, `active`, `title`) decoded from the lazy payload — the selective
-//!   fast path. Deliberately narrower output; not equivalent to the full-model
-//!   paths, so it is reported, not compared as a drop-in.
+//!   fast path. Its `Cow` fields carry `#[serde(borrow)]`: unescaped values
+//!   decode `Cow::Borrowed` (verified at startup), escaped values decode
+//!   `Cow::Owned`. Deliberately narrower output; not equivalent to the
+//!   full-model paths, so it is reported, not compared as a drop-in.
 
 use std::borrow::Cow;
 
@@ -30,8 +39,10 @@ mod common;
 
 #[derive(Deserialize)]
 struct SelectedWindow<'a> {
+    #[serde(borrow)]
     id: Cow<'a, str>,
     active: bool,
+    #[serde(borrow)]
     title: Cow<'a, str>,
 }
 
@@ -159,6 +170,9 @@ fn bench_windows(c: &mut Criterion, fixtures: Vec<Fixture>) {
         );
 
         // Startup-only correctness cross-checks; never part of timed loops.
+        // With #[serde(borrow)]: ids are unescaped in every fixture, so they
+        // must decode Borrowed; live titles are all unescaped (Borrowed),
+        // synthetic titles must exercise both branches.
         let message = Message::decode(frame).expect("envelope");
         let Message::Event {
             data: lazy_payload, ..
@@ -168,6 +182,21 @@ fn bench_windows(c: &mut Criterion, fixtures: Vec<Fixture>) {
         };
         let selected: Vec<SelectedWindow<'_>> =
             codec::decode(lazy_payload.as_raw_str().as_bytes()).expect("projection");
+        assert!(
+            selected
+                .iter()
+                .all(|window| matches!(window.id, Cow::Borrowed(_))),
+            "ids must decode borrowed"
+        );
+        let borrowed_titles = selected
+            .iter()
+            .filter(|window| matches!(window.title, Cow::Borrowed(_)))
+            .count();
+        if fixture.name.starts_with("live") {
+            assert_eq!(borrowed_titles, selected.len(), "live titles unescaped");
+        } else {
+            assert!(borrowed_titles > 0 && borrowed_titles < selected.len());
+        }
         selected_matches_full(&selected, expected);
         let direct: Windows = codec::decode(data).expect("model");
         assert_eq!(&direct, expected);

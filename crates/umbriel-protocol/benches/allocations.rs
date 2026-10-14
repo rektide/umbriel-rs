@@ -3,12 +3,17 @@
 //! Not a Criterion target: a counting global allocator perturbs timing, so it
 //! runs in its own binary and reports per-call allocation counts (calls and
 //! requested bytes; `realloc` counts as one call at its new size). Counters
-//! are armed only around the measured closure, so process/criterion-style
-//! noise is excluded.
+//! are armed only around the measured closure, so process noise is excluded.
 //!
-//! Run: cargo bench -p umbriel-protocol --bench allocations --no-run &&
+//! The `unsafe` in this file is confined to benchmark instrumentation: the
+//! forwarding `GlobalAlloc` impl. Production crates in this workspace keep
+//! `#![forbid(unsafe_code)]`; this file is the deliberate, documented
+//! exception and ships no library code.
+//!
+//! Run everything:
 //!      cargo bench -p umbriel-protocol --bench allocations
-//! (plain binary; prints one table and exits).
+//! or filter by substring:
+//!      cargo bench -p umbriel-protocol --bench allocations -- selected
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::borrow::Cow;
@@ -23,14 +28,28 @@ use umbriel_protocol::{
 
 mod common;
 
-// Fields are decoded-and-dropped in the allocation runs; only decode.rs
-// cross-checks their contents.
+// With field-level #[serde(borrow)]: unescaped values decode Cow::Borrowed;
+// escaped values decode Cow::Owned (both branches verified in main()).
+// `active` is decoded-and-dropped here; decode.rs cross-checks contents.
 #[allow(dead_code)]
 #[derive(Deserialize)]
 struct SelectedWindow<'a> {
+    #[serde(borrow)]
     id: Cow<'a, str>,
     active: bool,
+    #[serde(borrow)]
     title: Cow<'a, str>,
+}
+
+// Deliberate misconfiguration comparison: the same projection without
+// #[serde(borrow)] deserializes every field owned, exactly like String.
+// Kept to quantify the cost of forgetting the annotation.
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct SelectedOwnedWindow {
+    id: String,
+    active: bool,
+    title: String,
 }
 
 struct CountingAllocator {
@@ -74,7 +93,10 @@ impl CountingAllocator {
 }
 
 /// Warm the path, then report first-call and steady per-call allocation
-/// counts over `iterations` armed calls (median / min / max).
+/// counts over `iterations` armed calls (median / min / max). "Steady"
+/// describes the measured path at its working set, not allocator warmth:
+/// the process allocator is already warmed by fixture loading before the
+/// first armed call.
 fn measure<T>(name: &str, iterations: u64, mut path: impl FnMut() -> T) {
     let mut first: Option<(u64, u64)> = None;
     let mut samples: Vec<(u64, u64)> = Vec::new();
@@ -114,6 +136,11 @@ fn measure<T>(name: &str, iterations: u64, mut path: impl FnMut() -> T) {
 }
 
 fn main() {
+    // cargo bench passes its own flags (e.g. `--bench`) to the binary;
+    // only a leading non-flag token acts as a label filter.
+    let filter = std::env::args().nth(1).filter(|arg| !arg.starts_with('-'));
+    let selected = |name: &str| filter.as_deref().is_none_or(|f| name.contains(f));
+
     let windows_line = common::fixture("live-windows.json");
     let live_frame = common::frame_without_lf(&windows_line).to_vec();
     let synthetic_line = common::fixture("synthetic-windows-50.json");
@@ -129,6 +156,33 @@ fn main() {
     let live_data = payload_of(&live_frame);
     let synthetic_data = payload_of(&synthetic_frame);
 
+    // Verify both Cow branches before measuring: ids are unescaped in every
+    // fixture (Borrowed); live titles are all unescaped (Borrowed);
+    // synthetic titles include escapes (at least one Owned, one Borrowed).
+    for (name, frame) in [("live", &live_frame), ("synthetic", &synthetic_frame)] {
+        let message = Message::decode(frame).expect("envelope");
+        let Message::Event { data, .. } = &message else {
+            panic!("event");
+        };
+        let projection: Vec<SelectedWindow<'_>> =
+            codec::decode(data.as_raw_str().as_bytes()).expect("projection");
+        assert!(
+            projection.iter().all(|w| matches!(w.id, Cow::Borrowed(_))),
+            "{name} ids borrow"
+        );
+        let borrowed = projection
+            .iter()
+            .filter(|w| matches!(w.title, Cow::Borrowed(_)))
+            .count();
+        match name {
+            "live" => assert_eq!(borrowed, projection.len(), "live titles borrow"),
+            _ => assert!(
+                borrowed > 0 && borrowed < projection.len(),
+                "synthetic mixed"
+            ),
+        }
+    }
+
     let limits: Limits = common::bench_limits();
     let live_stream = common::repeat_frames(&windows_line, 16);
 
@@ -139,56 +193,88 @@ fn main() {
         ("live-windows(29)", &live_frame),
         ("synthetic-50", &synthetic_frame),
     ] {
-        measure(&format!("envelope {label}"), 200, || {
-            Message::decode(frame).expect("envelope")
-        });
-        measure(&format!("envelope+typed {label}"), 200, || {
-            let message = Message::decode(frame).expect("envelope");
-            match model::decode_event(&message).expect("typed") {
-                EventDecode::Known(Event::Windows(windows)) => windows,
-                other => panic!("{other:?}"),
-            }
-        });
         let data = if label.starts_with("live") {
             &live_data
         } else {
             &synthetic_data
         };
-        measure(&format!("model_direct {label}"), 200, || {
-            codec::decode::<Windows>(data).expect("model")
-        });
-        measure(&format!("envelope+selected {label}"), 200, || {
-            let message = Message::decode(frame).expect("envelope");
-            let Message::Event { data, .. } = &message else {
-                panic!("event");
-            };
-            codec::decode::<Vec<SelectedWindow<'_>>>(data.as_raw_str().as_bytes())
-                .expect("projection")
-        });
+        if selected("envelope") {
+            measure(&format!("envelope {label}"), 200, || {
+                Message::decode(frame).expect("envelope")
+            });
+        }
+        if selected("typed") {
+            measure(&format!("envelope+typed {label}"), 200, || {
+                let message = Message::decode(frame).expect("envelope");
+                match model::decode_event(&message).expect("typed") {
+                    EventDecode::Known(Event::Windows(windows)) => windows,
+                    other => panic!("{other:?}"),
+                }
+            });
+        }
+        if selected("model_direct") {
+            measure(&format!("model_direct {label}"), 200, || {
+                codec::decode::<Windows>(data).expect("model")
+            });
+        }
+        if selected("selected") {
+            // The borrowed projection cannot outlive the frame's LazyValue,
+            // so consume it inside the measured closure; allocation counts
+            // are unaffected (only alloc/realloc are counted).
+            measure(&format!("envelope+selected(borrow) {label}"), 200, || {
+                let message = Message::decode(frame).expect("envelope");
+                let Message::Event { data, .. } = &message else {
+                    panic!("event");
+                };
+                let projection =
+                    codec::decode::<Vec<SelectedWindow<'_>>>(data.as_raw_str().as_bytes())
+                        .expect("projection");
+                std::hint::black_box(&projection);
+            });
+            measure(
+                &format!("envelope+selected(owned,no-borrow) {label}"),
+                200,
+                || {
+                    let message = Message::decode(frame).expect("envelope");
+                    let Message::Event { data, .. } = &message else {
+                        panic!("event");
+                    };
+                    let projection =
+                        codec::decode::<Vec<SelectedOwnedWindow>>(data.as_raw_str().as_bytes())
+                            .expect("projection");
+                    std::hint::black_box(&projection);
+                },
+            );
+        }
     }
-    measure("framing warm receive live-windows×16", 200, || {
+    if selected("framing") {
+        // Fresh Framer per call: cold first-turn shape, including the single
+        // exact-size capacity growth. Application storage is NOT reused here.
+        measure("framing cold/fresh Framer first turn ×16", 200, || {
+            let mut framer = Framer::new(limits);
+            framer.push(&live_stream).expect("push");
+            while let Some(frame) = framer.next_frame() {
+                std::hint::black_box(frame);
+            }
+        });
+        // Reused application storage: second full turn on one Framer whose
+        // capacity was grown by the first turn. Allocator warmth is not the
+        // variable here; storage reuse is.
         let mut framer = Framer::new(limits);
+        framer.push(&live_stream).expect("push");
+        while framer.next_frame().is_some() {}
+        ALLOCATOR.calls.store(0, Ordering::Relaxed);
+        ALLOCATOR.bytes.store(0, Ordering::Relaxed);
+        ALLOCATOR.armed.store(true, Ordering::Relaxed);
         framer.push(&live_stream).expect("push");
         while let Some(frame) = framer.next_frame() {
             std::hint::black_box(frame);
         }
-    });
-    // Steady-state receive on one reused Framer: allocations only appear as
-    // growth/compaction events, so report the delta over a second turn.
-    let mut framer = Framer::new(limits);
-    framer.push(&live_stream).expect("push");
-    while framer.next_frame().is_some() {}
-    ALLOCATOR.calls.store(0, Ordering::Relaxed);
-    ALLOCATOR.bytes.store(0, Ordering::Relaxed);
-    ALLOCATOR.armed.store(true, Ordering::Relaxed);
-    framer.push(&live_stream).expect("push");
-    while let Some(frame) = framer.next_frame() {
-        std::hint::black_box(frame);
+        ALLOCATOR.armed.store(false, Ordering::Relaxed);
+        println!(
+            "framing reused Framer, second full turn        {:>5} calls {:>8} B",
+            ALLOCATOR.calls.load(Ordering::Relaxed),
+            ALLOCATOR.bytes.load(Ordering::Relaxed)
+        );
     }
-    ALLOCATOR.armed.store(false, Ordering::Relaxed);
-    println!(
-        "framing reused-Framer second turn             steady {:>5} calls {:>8} B",
-        ALLOCATOR.calls.load(Ordering::Relaxed),
-        ALLOCATOR.bytes.load(Ordering::Relaxed)
-    );
 }
