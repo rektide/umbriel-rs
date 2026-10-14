@@ -1,0 +1,4 @@
+[
+  {"active": false, "app_id": "org.synthetic.Editor", "content_type": "none", "floating": false, "focused": true, "h": 800, "id": "synthetic-window-α", "pid": 42001, "scratchpad": "", "title": "Notes 雪\n\"quoted\" \\ path", "urgent": false, "w": 1000, "workspace": "SYNTH-1:42", "x": -900, "xdg_tag": "tag\tα", "xwayland": false, "y": -12},
+  {"active": true, "app_id": "org.synthetic.Pad", "content_type": "future-content", "floating": true, "focused": false, "h": 400, "id": "", "pid": -1, "scratchpad": "synthetic-pad", "title": "Scratch 🦦", "urgent": true, "w": 600, "workspace": "", "x": -20, "xdg_tag": "", "xwayland": true, "y": 24}
+]

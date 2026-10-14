@@ -1,0 +1,4 @@
+[
+  {"active": true, "focused": true, "id": "SYNTH-1:42", "index": 1, "layout": "scrolling", "name": "2", "named": true, "occupied": true, "output": "SYNTH-1"},
+  {"active": true, "focused": false, "id": "opaque/雪:identity", "index": 2, "layout": "future-layout", "name": "Synthetic 雪", "named": false, "occupied": false, "output": "SYNTH-2"}
+]

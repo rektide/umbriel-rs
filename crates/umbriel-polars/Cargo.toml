@@ -1,0 +1,13 @@
+[package]
+name = "umbriel-polars"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Finite lazy Polars queries over Umbriel snapshots"
+
+[dependencies]
+polars = { version = "=0.55.2", default-features = false, features = ["lazy"] }
+umbriel-arrow = { version = "0.1.0", path = "../umbriel-arrow" }
+
+[dev-dependencies]
+umbriel-protocol = { path = "../umbriel-protocol" }
