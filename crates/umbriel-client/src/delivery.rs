@@ -56,6 +56,27 @@ pub struct Observer {
     state: Arc<Mutex<QueueState>>,
 }
 impl Observer {
+    /// Nonblocking receive with the same accounting and terminal-drain contract
+    /// as `recv`. `Ok(None)` means empty *right now*, not source completion.
+    /// Useful for draining already queued transitions before publishing a timer.
+    pub fn try_recv(&mut self) -> Result<Option<Observation>, DeliveryEnd> {
+        match self.receiver.try_recv() {
+            Ok(item) => {
+                self.state.lock().expect("delivery accounting lock").bytes -=
+                    item.retained_bytes().expect("admitted byte weight");
+                Ok(Some(item))
+            }
+            Err(mpsc::error::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::error::TryRecvError::Disconnected) => Err(self
+                .state
+                .lock()
+                .expect("delivery terminal lock")
+                .end
+                .clone()
+                .expect("producer retains terminal before close")),
+        }
+    }
+
     pub async fn recv(&mut self) -> Result<Observation, DeliveryEnd> {
         match self.receiver.recv().await {
             Some(item) => {
@@ -137,6 +158,32 @@ fn terminal_text_bytes(terminal: &Terminal) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn try_receive_drains_and_repeats_terminal_with_shared_accounting() {
+        let item = Observation::Epoch { epoch: 1 };
+        let (producer, mut observer) = channel(2, item.retained_bytes().unwrap());
+        assert!(observer.try_recv().unwrap().is_none());
+        producer.push(item.clone()).unwrap();
+        assert!(producer.push(item.clone()).is_err());
+        assert!(observer.try_recv().unwrap().is_some());
+        producer.push(item).unwrap();
+        producer.finish(DeliveryEnd::Lagged {
+            epoch: 1,
+            position: 2,
+        });
+        assert!(observer.try_recv().unwrap().is_some());
+        for _ in 0..2 {
+            assert!(matches!(
+                observer.try_recv(),
+                Err(DeliveryEnd::Lagged { .. })
+            ));
+        }
+        assert!(matches!(
+            observer.recv().await,
+            Err(DeliveryEnd::Lagged { .. })
+        ));
+    }
 
     #[tokio::test]
     async fn byte_budget_counts_payload_metadata_and_releases_on_receive() {
