@@ -10,4 +10,7 @@ polars = { version = "=0.55.2", default-features = false, features = ["lazy"] }
 umbriel-arrow = { version = "0.1.0", path = "../umbriel-arrow" }
 
 [dev-dependencies]
+tempfile = "3"
+tokio = { version = "1.48", features = ["io-util", "net", "rt", "macros"] }
+umbriel-client = { path = "../umbriel-client" }
 umbriel-protocol = { path = "../umbriel-protocol" }
