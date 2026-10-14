@@ -97,6 +97,8 @@ struct Relation<K, V> {
     order: Vec<K>,
 }
 
+type ReplacementCommit<K, V> = Commit<ChangeSet<K, Arc<V>>>;
+
 /// Actual local window replacement receipt, not a compositor transition log.
 /// Equal rows remain in `commit.evidence`; consumers choose semantic filtering.
 /// Transition order is unspecified, unlike the inventory's native source order.
@@ -138,7 +140,7 @@ impl<K: Clone + Eq + Hash + Ord, V> Relation<K, V> {
         stamp: Stamp,
         rows: Vec<(K, V)>,
         changes: bool,
-    ) -> Result<Option<Commit<ChangeSet<K, Arc<V>>>>, Error> {
+    ) -> Result<Option<ReplacementCommit<K, V>>, Error> {
         self.status.last_attempt = Some(stamp);
         let order = rows.iter().map(|(key, _)| key.clone()).collect();
         let replacement = Replacement::try_from_entries(rows).map_err(|_| {
@@ -298,7 +300,7 @@ impl Inventory {
         stamp: Stamp,
         event: Event,
         changes: bool,
-    ) -> Result<Option<Commit<ChangeSet<WindowId, Arc<Window>>>>, Error> {
+    ) -> Result<Option<ReplacementCommit<WindowId, Window>>, Error> {
         if stamp.epoch != self.epoch {
             return Err(Error::WrongEpoch);
         }
