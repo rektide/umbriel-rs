@@ -1,0 +1,10 @@
+[package]
+name = "umbriel-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bounded sans-I/O Umbriel connection roles and reply ownership"
+
+[dependencies]
+umbriel-protocol = { path = "../umbriel-protocol" }
+thiserror = "2.0.21"
