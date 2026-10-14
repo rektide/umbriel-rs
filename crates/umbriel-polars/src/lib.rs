@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 //! Explicit finite lazy execution; no live state, socket ownership or timers.
 
+/// The exact native query ecosystem selected by this integration.
+pub use polars;
+
 use std::sync::Arc;
 
 use polars::prelude::{CompatLevel, DataFrame, IntoLazy, LazyFrame, PolarsError, PolarsResult};

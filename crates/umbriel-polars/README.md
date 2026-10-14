@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ec7a20df7ffeMkxNbf2TS1zhbi
-    title: Implemented finite queries and synthetic, array and subscription-wire examples with local provenance
+    title: Implemented finite queries, native ecosystem reexports and synthetic, array and subscription-wire examples
   - resource: ../../design/architecture/architecture1.gpt6a.md
     title: Polars-native version, dtype and execution boundaries
   - resource: ../umbriel-arrow/README.md
@@ -19,8 +19,7 @@ sources:
 # umbriel-polars
 
 ```rust,ignore
-use polars::prelude::col;
-use umbriel_polars::SnapshotFrame;
+use umbriel_polars::{SnapshotFrame, polars::prelude::col};
 
 let snapshot = umbriel_arrow::windows(&rows, local_provenance)?;
 let output = SnapshotFrame::from(snapshot).lazy()
@@ -49,6 +48,11 @@ Dependencies are `umbriel-arrow` and exactly `polars = "=0.55.2"`, with default
 features disabled and only `lazy` explicitly enabled. Polars' transitive feature
 requirements are broader than this direct selection. No measured speedup or
 universal zero-allocation guarantee is claimed.
+
+`umbriel_polars::polars` transparently reexports the selected native query
+ecosystem, including expressions such as `col` and `lit`, so callers need not
+guess a matching dependency version. The emitter likewise reexports
+`umbriel_arrow::polars_arrow`; neither namespace is a custom query language.
 
 ## Composition example
 
@@ -79,7 +83,12 @@ umbriel subscribe workspaces | cargo run -p umbriel-polars --example snapshot_qu
 ```
 
 Wire mode is a subscription-event consumer, not a command/reply driver. It
-validates each envelope, decodes only the selected family's payload using the
+is a synchronous, backpressured demonstration of finite queries: each selected
+snapshot is collected before stdin advances. A slow query can stall the upstream
+pipe; this is not the future independently draining socket driver. No background
+runtime or queues are introduced.
+
+Wire mode validates each envelope, decodes only the selected family's payload using the
 protocol event models, and skips unrelated/unknown events. Bare blank initial
 frames and uncorrelated `ok` lines are skipped with diagnostics, never treated
 as command success. Remote `err` lines, malformed envelopes and malformed

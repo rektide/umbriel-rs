@@ -6,9 +6,8 @@ use std::{
     io::{self, BufRead},
 };
 
-use polars::prelude::col;
 use umbriel_arrow::{windows, workspaces};
-use umbriel_polars::{QueryResult, SnapshotFrame};
+use umbriel_polars::{QueryResult, SnapshotFrame, polars::prelude::col};
 use umbriel_protocol::{
     codec::decode,
     envelope::Message,

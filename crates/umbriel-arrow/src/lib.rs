@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 //! Owned Polars-native Arrow snapshots, independent of state and query engines.
 
+/// The exact native Arrow ecosystem selected by this emitter.
+pub use polars_arrow;
+
 use std::{error::Error, fmt, sync::Arc};
 
 use polars_arrow::{
