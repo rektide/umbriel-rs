@@ -1,13 +1,15 @@
 ---
 type: Research
 title: Polars and Apache Arrow columnar targets — overhead, conversion, and one emitter
-description: Source-checked and probe-verified comparison of polars-arrow versus apache arrow-array for umbriel's snapshot batch emission; recommends an arrow-array-native emitter with a small audited C Data Interface adapter for Polars, with the Polars-native option graded as still viable.
+description: Historical comparison of Polars and Apache Arrow batch types and conversion probes; the Apache-native bridge recommendation was overruled in favor of the now-implemented Polars-native path.
 resource: design/columnar/arrow-polars0.glm53m.md
 status: draft
 generated:
   at: 2026-10-13
   by: model:zai-coding-plan/glm-5.3#max
 sources:
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent clarified the overruled recommendation and the limits of the unmeasured performance claims during implementation
   - resource: opencode://ses_ec8ca68ccffeDXLmRjrvmin5KH
     title: Investigated polars-arrow standalone use, measured overhead deltas, proved both C Data Interface bridges and the IPC fallback in a compile probe, and wrote this recommendation
   - resource: ../../README.md
@@ -62,6 +64,13 @@ verification:
 > to revisit: switching to an arrow-array emitter later costs zero copied data.
 
 ## Recommendation
+
+**Performance qualification (parent review, 2026-10-14):** the probes below
+check values and particular shared-buffer identities. No timing benchmark was
+run, so statements of equal runtime cost or zero runtime overhead are not
+established. The historical recommendation below remains overruled; the
+[implemented crates](../../README.md#implemented-crates) use Polars-native types
+and no C Data Interface bridge.
 
 **Make `umbriel-arrow` emit `arrow_array::RecordBatch` natively, and put the
 Polars conversion in a small adapter crate that owns a centralized, audited C

@@ -9,14 +9,14 @@ generated:
   by: model:zai-coding-plan/glm-5.3#max
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
-    title: Founding session — research, architecture, assessment, protocol implementation, and ticketing
+    title: Founding session, resumed implementation, and source-review corrections to the historical handoff
   - resource: https://crates.io/api/v1/crates/polars
     title: Verified latest published Rust polars is 0.55.2; no Rust 2.0 exists
   - resource: https://crates.io/api/v1/crates/kubeless
     title: Verified the kubeless name is taken by an unrelated 2018 crate
   - resource: file:///home/rektide/src/kubeless/Cargo.toml
     title: Confirmed kubeless is a kube-rs fork with fork-free kubeless-view substrate
-  - resource: crates/umbriel-protocol/README.md
+  - resource: ../../crates/umbriel-protocol/README.md
     title: Implemented foundation surface and verification commands
   - resource: ../protocol/commands0.glm53m.md
     title: Wire catalog the implementation is built against
@@ -29,6 +29,12 @@ sources:
 ---
 
 # Session handoff
+
+**Historical state snapshot:** implementation has advanced since this handoff.
+The [current crate inventory](../../README.md#implemented-crates) now covers
+protocol models, sans-I/O sessions, Polars-native batches, and finite lazy queries.
+The [current architecture](../architecture/architecture1.gpt6a.md) governs the
+Polars-native decision and corrects the earlier unmeasured runtime-overhead claims.
 
 ## What this project is
 

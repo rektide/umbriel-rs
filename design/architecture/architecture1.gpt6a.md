@@ -63,6 +63,11 @@ executor, a wall clock, or a timer. That is the useful sans-I/O boundary here.
 
 ### Proposed crate boundaries
 
+The protocol, session, Arrow-emitter, and Polars-query crates are implemented;
+the [root implementation inventory](../../README.md#implemented-crates) links
+their current APIs and examples. Client and materialized-state crates remain
+subsequent slices of this architecture.
+
 | Crate | Owns | Dependencies flow toward |
 |---|---|---|
 | `umbriel-protocol` | Framing, Sonic wire envelopes, query/action grammar, payload models | Sonic, Serde, small codec utilities |
