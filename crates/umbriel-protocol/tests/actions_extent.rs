@@ -10,10 +10,18 @@ struct Msg {
     arg: String,
 }
 
-// Independent miniature of the compositor's from_chars branches: one optional
-// sign, plain decimal digits, no exponent or trailing garbage. The fraction
-// branch rejects '+' outright; the delta branch strips exactly one leading '+'.
-fn parse_decimal(arg: &str) -> Option<f64> {
+// A model of the plain-decimal subset the Rust formatter emits: an optional
+// '-', at least one integral digit, at most one interior '.', and fractional
+// digits only after it — never exponent notation, a bare '.', or inf/nan
+// words. This is deliberately NOT a model of std::from_chars: the native
+// general-format branch (keybind_parse.cpp:495/516, observed with a local
+// charconv probe) additionally admits '.5', '1.', and scientific spellings
+// such as '1e-1' or '5e-324', and parses 'inf' and 'nan' words that the
+// upstream finiteness gate then rejects. A leading '+' is rejected by
+// from_chars itself; the delta branch strips exactly one '+' first. Because
+// our builder output always lies inside this subset, checking emissions
+// against the subset proves the native branch accepts them.
+fn parse_plain_decimal(arg: &str) -> Option<f64> {
     let unsigned = arg.strip_prefix('-').unwrap_or(arg);
     let (integral, fractional) = match unsigned.split_once('.') {
         Some((integral, fractional)) => (integral, fractional),
@@ -26,43 +34,73 @@ fn parse_decimal(arg: &str) -> Option<f64> {
     arg.parse().ok()
 }
 
-fn accepts_fraction(text: &str) -> Option<f64> {
-    let arg = text.strip_prefix("window-set-primary-extent:")?;
-    let value = parse_decimal(arg)?;
-    (0.1..=1.0).contains(&value).then_some(value)
+// Upstream's post-parse gates, applied to an argument our subset grammar
+// already accepted.
+fn fraction_gate(value: f64) -> Option<f64> {
+    (value.is_finite() && (0.1..=1.0).contains(&value)).then_some(value)
 }
 
-fn accepts_delta(text: &str) -> Option<f64> {
-    let arg = text.strip_prefix("window-modify-primary-extent:")?;
-    let unsigned = arg.strip_prefix('+').unwrap_or(arg);
-    let value = parse_decimal(unsigned)?;
-    (value != 0.0 && value.abs() <= 0.9).then_some(value)
+fn delta_gate(value: f64) -> Option<f64> {
+    (value.is_finite() && value != 0.0 && value.abs() <= 0.9).then_some(value)
 }
 
-// The upstream conformance spellings the C++ parser rejects.
+// The argument half of an emitted action text, reparsed as a plain decimal.
+// Emitted text never carries '+', so no sign stripping is needed here.
+fn emitted_argument(text: &str) -> Option<f64> {
+    parse_plain_decimal(text.split_once(':')?.1)
+}
+
+// Spellings the native branch rejects, each verified against the local
+// charconv probe: range-gate failures ('0', '0.09', '1.5', '-0.5'), grammar
+// failures ('abc', '0.5x', '', '0.90.1'), the from_chars '+' rejection
+// ('+0.5', '++0.1' even after the delta branch strips one '+'), and 'nan',
+// which from_chars parses but the upstream finiteness gate rejects.
 #[test]
-fn the_model_rejects_the_upstream_rejected_spellings() {
+fn gates_reject_what_the_native_branch_rejects() {
+    // The fraction branch hands the text to from_chars unchanged, so a
+    // leading '+' is rejected natively; no stripping happens here.
     for arg in [
-        "0", "0.09", "1.5", "-0.5", "abc", "0.5x", "", "nan", "+0.5", ".5", "1.",
+        "0", "0.09", "1.5", "-0.5", "abc", "0.5x", "", "nan", "+0.5", "0.90.1",
     ] {
+        let value = parse_plain_decimal(arg);
         assert!(
-            accepts_fraction(&format!("window-set-primary-extent:{arg}")).is_none(),
-            "fraction model accepted {arg:?}"
+            value.is_none_or(|value| fraction_gate(value).is_none()),
+            "fraction evidence accepted {arg:?}"
         );
     }
+    // The delta branch strips exactly one leading '+' before from_chars.
     for arg in [
         "0", "1.5", "-1.0", "abc", "", "++0.1", "0.1x", "nan", "inf", "0.90.1",
     ] {
+        let value = parse_plain_decimal(arg.strip_prefix('+').unwrap_or(arg));
         assert!(
-            accepts_delta(&format!("window-modify-primary-extent:{arg}")).is_none(),
-            "delta model accepted {arg:?}"
+            value.is_none_or(|value| delta_gate(value).is_none()),
+            "delta evidence accepted {arg:?}"
         );
     }
     // The delta branch, unlike fractions, admits one explicit plus.
     assert_eq!(
-        accepts_delta("window-modify-primary-extent:+0.1"),
+        parse_plain_decimal("+0.1".strip_prefix('+').unwrap()).and_then(delta_gate),
         Some(0.1)
     );
+    // from_chars itself parses 'inf'/'nan' words (probe-observed); the
+    // upstream finiteness gate is what rejects those parsed values.
+    assert!(fraction_gate(f64::NAN).is_none());
+    assert!(delta_gate(f64::INFINITY).is_none() && delta_gate(f64::NAN).is_none());
+}
+
+// The subset grammar is intentionally narrower than from_chars: '.5', '1.',
+// and scientific notation are native-admitted spellings our formatter never
+// produces. The model rejecting them documents that boundary; it does not
+// claim the compositor rejects them.
+#[test]
+fn the_plain_decimal_model_is_deliberately_narrower_than_from_chars() {
+    for arg in [".5", "1.", "1e-1", "1E-1", "0.5e1", "5e-324"] {
+        assert!(
+            parse_plain_decimal(arg).is_none(),
+            "model treated {arg:?} as emitted"
+        );
+    }
 }
 
 #[test]
@@ -80,7 +118,7 @@ fn fractions_accept_exactly_the_compositor_range() {
         assert_eq!(fraction.value(), value);
         let set = Action::window_set_primary_extent(fraction);
         assert_eq!(
-            accepts_fraction(set.as_str()),
+            emitted_argument(set.as_str()).and_then(fraction_gate),
             Some(value),
             "{} emitted an unacceptable spelling",
             set.as_str()
@@ -158,15 +196,41 @@ fn deltas_are_finite_nonzero_and_capped_at_nine_tenths() {
 }
 
 // The shortest round-trip decimal Rust emits for each value; the emitted
-// spelling must reparse under the same grammar the compositor applies.
+// spelling must reparse to the same value inside the plain-decimal subset,
+// which the native branch is observed to accept in full.
 fn delta_action_spelling(value: f64) -> String {
     let emitted = format!("{value}");
     assert_eq!(
-        accepts_delta(&format!("window-modify-primary-extent:{emitted}")),
+        parse_plain_decimal(&emitted).and_then(delta_gate),
         Some(value),
         "spelling {emitted} lost the value"
     );
     emitted
+}
+
+// Representable tiny deltas stay plain positional decimals: Display never
+// switches to exponent notation, and the local charconv probe observed the
+// native branch fully consuming these long spellings and reproducing the
+// identical f64 bits for both f64::MIN_POSITIVE and the smallest subnormal.
+#[test]
+fn tiny_deltas_roundtrip_as_plain_positional_decimals() {
+    for value in [f64::MIN_POSITIVE, f64::from_bits(1)] {
+        let delta = ExtentDelta::new(value).unwrap();
+        assert_eq!(delta.value(), value);
+        let emitted = delta_action_spelling(value);
+        assert!(emitted.starts_with("0.0") && !emitted.contains(['e', 'E']));
+        assert_eq!(
+            Action::window_modify_height_down(delta)
+                .as_str()
+                .strip_prefix("window-modify-height-down:"),
+            Some(emitted.as_str())
+        );
+        // Well inside the wire budget despite hundreds of digits.
+        assert!(emitted.len() < 400);
+    }
+    // Zero-adjacent but exactly zero (including -0.0) stays rejected.
+    assert!(ExtentDelta::new(0.0).is_err());
+    assert!(ExtentDelta::new(-0.0).is_err());
 }
 
 #[test]
