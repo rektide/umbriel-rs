@@ -9,6 +9,8 @@ generated:
   at: 2026-10-14
   by: model:zai-coding-plan/glm-5.3#max
 sources:
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent review corrected borrowing, SIMD and measurement interpretations; linked the implemented architecture and measured follow-up
   - resource: opencode://ses_ec7597a7affeFbugqOy35TD50A
     title: Live capture, sanitization, fixtures, benches, benchmark sessions, allocation probes, review corrections of serde-borrow, SIMD facts, ratios, copying, and statistics, and this report
   - resource: json0.gpt6a.md
@@ -367,6 +369,10 @@ outputs, medians, provenance, and the allocation probe live in gitignored
 
 ## Cross-references
 
+- [Known-enum allocation addendum](enum-allocations0.gpt61s.md) — subsequent
+  measured cleanup; the baseline numbers above retain their original revision.
+- [Implemented architecture](../architecture/architecture2.gpt6a.md) — current
+  placement of framing, decoding, delivery, materialization and query work.
 - [JSON research](json0.gpt6a.md) — Sonic selection, scratch/borrowing
   facts (including the `serde(borrow)` warning), and the three-layer
   measurement design this implements.

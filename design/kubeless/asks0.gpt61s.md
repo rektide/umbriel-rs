@@ -385,6 +385,11 @@ provenance pair alone saves essentially no code and should remain ordinary Rust.
 
 ## Integration notes
 
+The [implemented architecture](../architecture/architecture2.gpt6a.md) explains
+the current ownership and data paths; the [usage guide](../../README.md) links
+the runnable examples. This assessment supplies the prospective cross-project
+changes rather than revising those implemented contracts.
+
 The parent-owned README and architecture can link here for the upstream asks,
 while continuing to describe the native wire/session, state and columnar
 boundaries as implemented. This document deliberately does not modify those

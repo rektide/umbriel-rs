@@ -8,6 +8,8 @@ generated:
   at: 2026-10-13
   by: model:openai/gpt-6-astra#medium
 sources:
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent integrated the assessment and repaired navigation to moved Kubeless homes while preserving original revision-bound findings
   - resource: opencode://ses_ecbe07e52ffeiRoULSOml79Kjd
     title: Independently assessed tmux first and kubeless second, checked Rust columnar APIs, and proposed bounded reuse seams
   - resource: brief0.gpt6a.md
@@ -185,13 +187,19 @@ attribution and event interleaving over reproducing tmux's whole test apparatus.
 
 ## 2. Kubeless: useful packages below the controller
 
+Navigation update, 2026-10-14: the former `observation/view` implementation now
+lives under `observation/reflection`, and `runtime/assembly` is now `runtime`.
+The links below reach those current homes; the revision table still binds the
+original assessment. See the [newer asks assessment](../kubeless/asks0.gpt61s.md)
+for the current 0.1.0 API evaluation.
+
 ### Concrete reuse and its limits
 
 | Capability | Actual source seam | Umbriel fit / cost |
 |---|---|---|
 | Atomic keyed current view | [`kubeless-view-memory::memory_view`, `Writer::replace_affected`, `replace_changes`, `Reader::snapshot`](file:///home/rektide/src/kubeless/view/memory/src/lib.rs) | **Direct package candidate.** A small family-snapshot-to-`Replacement` adapter; no Kubernetes resource trait. Costs owned keys, `Arc<V>` rows, locking, replacement work. |
 | Writer lifetime/readiness | [`kubeless-view::{view, View, Writer, ViewStatus}`](file:///home/rektide/src/kubeless/view/src/lib.rs) | **Direct candidate when needed.** Adds explicit readiness and sole-writer closure; source health and connection epochs remain Umbriel data. Readiness stays true after closure. |
-| Staged replacement | [`Reflection::apply`, `Fact::{SnapshotBegin,SnapshotItem,SnapshotComplete}`](file:///home/rektide/src/kubeless/observation/view/src/state.rs) | **Small adapter, optional.** Commit only on complete validated family snapshot. Usually more machinery than direct `Replacement`, because Umbriel already delivers the complete family in one frame. |
+| Staged replacement | [`Reflection::apply`, `Fact::{SnapshotBegin,SnapshotItem,SnapshotComplete}`](file:///home/rektide/src/kubeless/observation/reflection/src/state.rs) | **Small adapter, optional.** Commit only on complete validated family snapshot. Usually more machinery than direct `Replacement`, because Umbriel already delivers the complete family in one frame. |
 | Snapshot+resumable session | [`StreamRequest::{Initial,Resume}`, `Frame`, `Recovery`](file:///home/rektide/src/kubeless/observation/session/src/protocol.rs) | **Do not substitute for the wire session.** Umbriel has no server resume cursor, paged acquisition, global completion marker, or replay. A local sequence cannot implement `Resume`. |
 | Seed then later commits | [`seeded::Subscribers::subscribe`](file:///home/rektide/src/kubeless/view/publication/src/seeded.rs) | **Strong local bootstrap pattern.** Registers before taking a coherent snapshot, then filters commits through the captured generation. Requires the documented single-writer commit/publication ordering. This is a local barrier, never an Umbriel initial-state barrier. |
 | Bounded fan-out | [`blocking::bounded`, `Publisher::publish`](file:///home/rektide/src/kubeless/view/publication/src/blocking.rs) | **Policy mismatch on the drain path.** Shared queue counts publications, not bytes; all responsible subscribers must advance. Good for deliberate backpressured offline/post-ingest pipelines. |
@@ -201,7 +209,7 @@ attribution and event interleaving over reproducing tmux's whole test apparatus.
 | Conditional operations | [`kubeless-operation`](file:///home/rektide/src/kubeless/operation/src/lib.rs) | **Weak direct fit today.** Its conflict retry needs source-checked conditions. Umbriel lacks CAS/version preconditions. A local view anchor cannot supply them. An `Infallible` conflict type could model one attempt, but adds little to a typed client call. |
 | Keyed work | [`ReadyWork`](file:///home/rektide/src/kubeless/work/ready/src/lib.rs), [`KeyedFutures::try_insert`](file:///home/rektide/src/kubeless/work/keyed/src/lib.rs) | **Useful later for controllers.** Exclusion key for a subscribed command lane must be the connection, not window ID. Different windows still share one reply slot. `insert` replaces/drops an existing future; use deliberate admission instead. |
 | Timed scheduling | [`work/schedule`](file:///home/rektide/src/kubeless/work/schedule/README.md) | **Optional Tokio consumer tool.** Trailing-edge debounce of every geometry snapshot is not active-identity dwell: repeated equal identity must not restart that timer. Keep the example reducer clock-injected. |
-| Runtime assembly | [`DirectParts`, `Config`, `CloseOn`, `reflected_current`](file:///home/rektide/src/kubeless/runtime/assembly/src/lib.rs) | **Controller recipe, not transport driver.** Selects source/readiness/drain policy and spawns no work by itself. Forceful drop does not manufacture completion; graceful drain excludes pending source publication. |
+| Runtime assembly | [`DirectParts`, `Config`, `CloseOn`, `reflected_current`](file:///home/rektide/src/kubeless/runtime/src/lib.rs) | **Controller recipe, not transport driver.** Selects source/readiness/drain policy and spawns no work by itself. Forceful drop does not manufacture completion; graceful drain excludes pending source publication. |
 | Catalog | [`Catalog`, `Declaration`, `reconcile`](file:///home/rektide/src/kubeless/catalog/src/lib.rs) | **Mostly a pattern for now.** Pure declared/discovered capability facts, not control reconciliation. Umbriel has no exhaustive discovery/version handshake; a pinned command catalog cannot be advertised as remotely confirmed support. |
 
 These lower crates really are generic today. `view/memory/Cargo.toml` has normal

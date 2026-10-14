@@ -22,9 +22,10 @@ sources:
 
 # A high-performance sans-I/O Umbriel client
 
-**Predecessor:** the [current architecture](architecture1.gpt6a.md) adopts the
-user's subsequent Sonic-first, whole-protocol, multi-crate direction. This
-document preserves the earlier argument and detailed active-window semantics.
+**Predecessor:** [architecture1](architecture1.gpt6a.md) adopted the user's
+Sonic-first, whole-protocol, multi-crate direction; the
+[current architecture](architecture2.gpt6a.md) describes its implementation.
+This document preserves the earlier argument and detailed active-window semantics.
 
 ## Direction
 

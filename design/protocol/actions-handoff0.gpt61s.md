@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#medium
 sources:
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent integrated the g expansions, corrected numeric conformance evidence, and added completion navigation
   - resource: opencode://ses_ec7757ed9ffejpJVbqe777EnUJ
     title: Implemented and verified overview-toggle then typed workspace-switch; prepared family delegation seams
   - resource: commands0.glm53m.md
@@ -25,6 +27,12 @@ extensions:
 ---
 
 # Typed action starter
+
+**Implemented continuation:** all 121 catalog paths are now covered by typed
+builders and the exact-once integration test. The
+[current architecture](../architecture/architecture2.gpt6a.md) describes the
+completed protocol layer. The account below preserves the two-action starter
+and the handoff used for the remaining families.
 
 Only `overview-toggle` and `workspace-switch` are implemented. This is a
 reviewable starter, not catalog completion. The [catalog research](commands0.glm53m.md)

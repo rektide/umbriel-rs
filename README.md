@@ -1,7 +1,7 @@
 ---
 type: Project
 title: umbriel-rs
-description: A Sonic-first Rust Umbriel protocol library with a sans-I/O core and separate client, state, and columnar concerns.
+description: Native Rust queries, actions, subscriptions, observed state, and Polars-native batches for the Umbriel compositor.
 resource: README.md
 status: draft
 generated:
@@ -9,9 +9,13 @@ generated:
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
-    title: Establish and review the protocol, session, and Polars-native implementation; integrate assessment, source evidence, and tickets
+    title: Implement and verify the six-crate library, review measured results and reuse boundaries, and rewrite the usage guide
   - resource: design/architecture/architecture1.gpt6a.md
-    title: Current library-wide architecture and human-selected direction
+    title: Predecessor design and human-selected direction
+  - resource: design/architecture/architecture2.gpt6a.md
+    title: Current implemented ownership and data paths
+  - resource: design/kubeless/asks0.gpt61s.md
+    title: Source-grounded reuse recommendations and small upstream lift proposals
   - resource: design/assessment/brief0.gpt6a.md
     title: Commission for learning from tmux-interface-control followed by kubeless
   - resource: design/assessment/reuse0.gpt6a.md
@@ -32,171 +36,179 @@ sources:
 
 # umbriel-rs
 
-A high-performance Rust implementation of the **Umbriel compositor's client
-protocol**, using **sonic-rs** and a **sans-I/O core**.
+Native Rust access to the **Umbriel compositor**: queries, typed actions,
+subscriptions, observed state, and **Polars-native batches**. Sonic handles JSON;
+the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 
-The direction is a multi-crate workspace: wire protocol and framing, Unix client
-drivers, optional materialized state, and optional Arrow/Polars output. Typed
-queries, actions, and subscriptions are the main surface. A stable-active-window
-stream is one example consumer.
+- All seven query models, six event families, and **121 typed action paths**.
+- Continuously driven subscriptions with independent bounded observers and
+  cancellation-safe command ownership.
+- A native **750 ms stable-active-window** example.
+- Complete snapshot batches, lazy queries, and derived output with provenance.
+  **No C Data Interface bridge.**
 
-Six cohesive crates are implemented. The design is grounded in Umbriel source and a
-completed assessment of existing Rust protocol/control libraries. Criterion
-benchmarks and allocation measurements cover the protocol paths; their report
-records build settings, fixtures, and measurement limits.
+## Run from the checkout
 
-## Implemented crates
+The development workspace expects `../kubeless` beside this repository. The
+state crate uses its unpublished `kubeless-view-memory` **0.1.0** leaf through
+the user-selected sibling path dependency.
 
-| Crate | Responsibility |
-|---|---|
-| [`umbriel-protocol`](crates/umbriel-protocol/README.md) | Reusable NDJSON framing, Sonic envelopes, requests, complete query/event models |
-| [`umbriel-session`](crates/umbriel-session/README.md) | Sans-I/O roles, partial writes, one command slot, cancellation-safe reply ownership |
-| [`umbriel-client`](crates/umbriel-client/README.md) | Native Tokio Unix sockets, independently driven subscriptions, bounded observers, opt-in reconnect epochs |
-| [`umbriel-state`](crates/umbriel-state/README.md) | Optional observed inventories and cross-family joins, plus clock-injected stable-active reduction |
-| [`umbriel-arrow`](crates/umbriel-arrow/README.md) | Full windows/workspaces snapshots as owned Polars-native batches with Utf8View strings |
-| [`umbriel-polars`](crates/umbriel-polars/README.md) | Finite lazy queries and native result batches retaining source provenance |
+Discovery uses `UMBRIEL_SOCKET`, or `XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY`.
+Outside a graphical shell, set `UMBRIEL_SOCKET` to the compositor's socket path.
+The examples below use the native Rust client.
 
-The columnar path uses matching **Polars 0.55.2** types throughout. No C Data
-Interface bridge is involved. The batch emitter works directly from protocol
-rows, without requiring a materialized state store or the query engine.
-
-### Wire and session
-
-[`umbriel-protocol`](crates/umbriel-protocol/README.md) provides:
-
-- Reusable, bounded NDJSON framing with borrowed frame slices.
-- Sonic decoding into caller-selected types and lazy wire payloads.
-- Order-independent reply/event envelopes, including successful `ok:null`,
-  unknown event names, and explicit blank subscription responses.
-- Requests for all seven queries, action dispatch, subscriptions, and headless
-  output operations, with correct JSON escaping and LF-inclusive request limits.
-- Complete owned query and event payload models, opaque IDs, extensible enum
-  spellings, and typed event routing that preserves unknown families.
-- Typed builders for the pinned catalog's 121 actions, with validated argument
-  forms, numeric workspace-name disambiguation, reusable prepared text, and a
-  deliberate raw-action escape hatch.
-
-The session crate drives one-shot requests and accepted subscriptions with
-sequential commands. Events continue routing while a command is pending;
-cancellation retains possibly-sent reply ownership until drainage or closure.
-It handles the keyboard-only blank initial response and independent family
-readiness without inventing a universal initialization barrier.
-
-The native client drives that session independently of consumer polling. Slow
-observers have explicit bounded-delivery loss; opt-in reconnect announces a new
-local epoch and never replays actions. Ordinary requests use fresh one-shot
-sockets, while accepted subscriptions support sequential requests.
-
-### Observed state and active window
-
-`umbriel-state` installs complete per-family replacements through the narrow
-Kubeless memory-view leaf. Captures retain source order, readiness/stale status,
-and both family stamps on cross-family joins. It also supplies a pure reducer
-for continuous observed active-window identity.
-
-The native 750 ms example keeps reading throughout the dwell and processes
-queued transitions before a due timer:
+### Report a window after 750 ms of stable activation
 
 ```sh
 cargo run -p umbriel-client --example active_window
 ```
 
-The typed one-shot command shell is available separately:
+Title and geometry changes do not restart the dwell. Focus changes do. The
+example keeps reading during the wait and invalidates continuity on loss.
+
+### Query real snapshots with Polars
+
+```sh
+CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 \
+  cargo run -p umbriel-polars --example native_query -- windows --count 1
+```
+
+Use `workspaces` for that family, or add `--socket PATH`. The example runs one
+blocking query worker at a time, prints each derived native batch, and drops it.
+Socket draining stays independent. For a compositor-free synthetic example:
+
+```sh
+CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 \
+  cargo run -p umbriel-polars --example snapshot_query -- windows
+```
+
+### Explore queries and actions
 
 ```sh
 cargo run -p umbriel-client --example shell
 ```
 
-Same-window title or geometry changes do not restart the dwell. Gaps invalidate
-continuity rather than masquerading as a valid no-active-window observation.
+Enter `help` for the REPL vocabulary. It supports all query names, typed
+`overview-toggle` and `workspace-switch`, quoted names/output arguments, and a
+`raw` action escape hatch. An optional socket path can be passed after `--`.
 
-**Development dependency:** the state crate and client examples use the
-user-selected sibling checkout at `../kubeless`. Its view leaves are unpublished;
-the workspace currently uses their local `0.1.0` APIs.
+## Use the libraries
 
-### Columnar queries
+### A typed one-shot query
 
-Complete windows/workspaces snapshots become schema-checked owned columns,
-including a schema-bearing empty replacement. Caller-supplied observation
-metadata lives outside the rows so it survives empty input. Lazy queries return
-explicitly derived results rather than relabeling a filtered result as the
-compositor's full family state.
+```rust,no_run
+use umbriel_client::{Discovery, Options};
+use umbriel_protocol::{model::Windows, request::{Query, Request}};
 
-Try the synthetic composition example:
-
-```sh
-CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 cargo run -p umbriel-polars --example snapshot_query -- windows
+async fn windows() -> Result<Windows, Box<dyn std::error::Error>> {
+    let endpoint = Discovery::from_env().resolve()?;
+    Ok(endpoint.query(Request::Query(Query::Windows), &Options::default()).await?)
+}
 ```
 
-Or acquire a real snapshot through the native client and run the query on a
-blocking worker, independently of socket draining:
+### Prepare an action once, reuse it
 
-```sh
-CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 cargo run -p umbriel-polars --example native_query -- windows --count 1
+```rust
+use umbriel_protocol::action::{Action, WorkspaceSelector, WorkspaceTarget};
+
+fn action_bytes() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let target = WorkspaceTarget::new(WorkspaceSelector::name("2")?)
+        .on_output("DP-1")?;
+    let action = Action::workspace_switch(target); // literal name "2", not index 2
+    let mut bytes = Vec::new();
+    action.request().encode(&mut bytes)?;
+    Ok(bytes)
+}
 ```
 
-The native example accepts `--socket PATH` when environment discovery is not
-available. It reports gaps and observer loss explicitly.
+Bare actions are available through `action::no_argument::NoArgument`; extent,
+target, layout, and command builders validate their own argument grammar.
+Runtime existence and applicability remain the compositor's decision.
 
-Collection is finite and blocking; production adapters should execute query
-work outside socket draining. The [Polars crate guide](crates/umbriel-polars/README.md)
-documents input modes, native expression composition, and output ownership.
+### Turn a snapshot into a lazy query
 
-The example also accepts real subscription envelopes:
+```rust,ignore
+use umbriel_polars::{SnapshotFrame, polars::prelude::col};
 
-```sh
-umbriel subscribe windows | cargo run -p umbriel-polars --example snapshot_query -- windows --wire
+let snapshot = umbriel_arrow::windows(&rows, local_provenance)?;
+let output = SnapshotFrame::from(snapshot)
+    .lazy()
+    .map(|plan| plan.filter(col("active")).select([col("id"), col("title")]))
+    .collect()?;
+let (source_metadata, native_batches) = output.into_parts();
 ```
 
-This is a synchronous, backpressured composition example. Its window query uses
-seat-global `active`, and its output retains local input positions through
-skipped events and empty snapshots.
+The native namespace reexports expose the exact selected Polars types. Strings
+use Utf8View, and Polars dependencies are pinned together at **0.55.2**. Empty
+input retains complete-replacement metadata; filtered or aggregated output is
+explicitly **derived**. Collection is finite and blocking, not a live incremental
+query or a hard memory limit on arbitrary plans.
 
-### Checks
+## Implemented crates
 
-Library implementations forbid unsafe code. The standalone allocation benchmark
-uses a forwarding system allocator solely for instrumentation. For the full
-workspace, the environment overrides below keep local Polars compilation memory
-manageable. Formatting names our packages explicitly so it does not traverse
-the sibling Kubeless checkout:
+| Crate | Use it for |
+|---|---|
+| [`umbriel-protocol`](crates/umbriel-protocol/README.md) | Reusable framing, Sonic envelopes, models, requests and typed actions with your own transport. |
+| [`umbriel-session`](crates/umbriel-session/README.md) | Clock-free connection roles, one wire slot, partial writes and reply ownership. |
+| [`umbriel-client`](crates/umbriel-client/README.md) | Native Tokio Unix requests and independently driven subscriptions. |
+| [`umbriel-state`](crates/umbriel-state/README.md) | Optional inventories, coherent captures/joins, freshness and stable-active reduction. |
+| [`umbriel-arrow`](crates/umbriel-arrow/README.md) | Owned, schema-checked windows/workspaces batches without a state store or query engine. |
+| [`umbriel-polars`](crates/umbriel-polars/README.md) | Native lazy expressions and provenance-preserving derived batches. |
+
+Action families and small helpers remain modules inside these responsibilities.
+Detailed usage and ownership contracts live in the crate guides.
+
+## Behavior worth knowing
+
+- Ordinary command sockets are **one-shot**. Accepted subscriptions can carry
+  sequential commands; there is no pipelining or wire request ID.
+- Cancelling a waiter does not undo a command or free a possibly-sent reply slot.
+  Slow observers report explicit loss rather than blocking other consumers.
+- Reconnect is opt-in, creates a new local epoch, and never replays actions.
+- Events are complete family snapshots. Families initialize independently;
+  a keyboard-only initial response may be blank. Local capture is not an atomic
+  compositor-wide snapshot.
+- Window `active` is seat-global; `focused` is remembered workspace focus.
+
+## Verify and measure
+
+The assembled implementation passed **152 tests, six doctests, formatting and
+warning-denying Clippy**. The environment overrides keep local Polars builds
+manageable; formatting names our packages to avoid traversing the sibling repo.
 
 ```sh
-CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo nextest run --workspace
-CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt -p umbriel-protocol -p umbriel-session -p umbriel-client -p umbriel-state -p umbriel-arrow -p umbriel-polars --check
+CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+  cargo nextest run --workspace --lib --tests --examples --locked
+CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+  cargo test --workspace --doc --locked
+CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 \
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt -p umbriel-protocol -p umbriel-session -p umbriel-client \
+  -p umbriel-state -p umbriel-arrow -p umbriel-polars --check
 ```
 
-## Read first
+Protocol benchmarks are separate from tests:
 
-- [Protocol commands and connection semantics](design/protocol/commands0.glm53m.md)
-  — source-grounded command, event, and action research. Read with the
-  [source-review corrections](design/protocol/review0.gpt6a.md), especially
-  request limits, empty subscription responses, and dedup scope.
-- [Current architecture](design/architecture/architecture1.gpt6a.md)
-  — Sonic-first whole-protocol design, crate boundaries, subscriptions,
-  materialized state, and the Arrow/Polars direction.
-- [Tmux/Kubeless assessment](design/assessment/reuse0.gpt6a.md)
-  — completed in that order; identifies Kubeless view reuse, tmux reply-ownership
-  laws, independent bounded delivery, and a concrete Arrow/Polars boundary.
-  The [assessment brief](design/assessment/brief0.gpt6a.md) records the commission.
+```sh
+cargo bench -p umbriel-protocol --bench framing
+cargo bench -p umbriel-protocol --bench decode
+cargo bench -p umbriel-protocol --bench allocations
+```
 
-- [Session handoff](design/handoff/handoff0.glm53m.md)
-  — state, decisions, pitfalls, and next steps as of the founding session.
+The [corrected baseline](design/performance/bench0.glm53m.md) records fixture,
+build and statistical limits. The [measured enum cleanup](design/performance/enum-allocations0.gpt61s.md)
+reduced the 29-window owned-model paths from **149 allocations to 120** without
+changing semantics; it makes no throughput claim. Library code forbids unsafe;
+the allocation benchmark uses a forwarding allocator only for measurement.
 
-## Supporting research
+## Design and next opportunities
 
-- [Protocol performance baseline](design/performance/bench0.glm53m.md) — measured
-  framing, decoding, and allocation behavior on sanitized live-shape and
-  synthetic fixtures; no parser bake-off or performance guarantees.
-- [Typed-action starter and handoff](design/protocol/actions-handoff0.gpt61s.md)
-  — records the Sol simple/harder implementation and g catalog expansion seams.
-- [JSON and buffer findings](design/performance/json0.gpt6a.md) — source-checked
-  allocation/lifetime tradeoffs. Sonic has since been selected; comparative
-  parser benchmarking is a future tool, not a development prerequisite.
-- [Initial architecture](design/architecture/architecture0.gpt6a.md) — preserved
-  predecessor, including detailed 750 ms stable-active-window semantics.
-- [Earlier zooming-kittens Umbriel investigation](file:///home/rektide/src/zooming-kittens/design/umbriel/investigation0.glm53max.md)
-  — protocol and Longcat research. zooming-kittens' existing compositor
-  implementation is niri; this document is not an existing Umbriel client.
-- [Shared ChatGPT discussion](https://chatgpt.com/s/t_6acdd415b14481918cce70cf0cec5e09)
-  — read in full; motivates selective decoding and reusable buffers.
+- [Current architecture](design/architecture/architecture2.gpt6a.md) — implemented
+  data paths, ownership, bounds and the reasons for the six-crate split.
+- [Kubeless asks and possible lifts](design/kubeless/asks0.gpt61s.md) — prioritize
+  an independent bounded delivery cell; retain current memory-view reuse and
+  native protocol/state/query policies.
+- [Protocol reference](design/protocol/commands0.glm53m.md) and
+  [source-review corrections](design/protocol/review0.gpt6a.md).
+- [Research and history index](design/index.md) — earlier designs, assessment,
+  performance evidence and the founding handoff.

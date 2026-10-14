@@ -30,6 +30,10 @@ sources:
 
 # Sonic-first architecture for the whole Umbriel protocol
 
+**Predecessor:** [architecture2](architecture2.gpt6a.md) now describes the
+implemented system and its verified ownership/data paths. This document preserves
+the decisions and design development that led to it.
+
 ## Direction selected by the user
 
 **Use Sonic. Build a general Umbriel protocol library with a sans-I/O core.**

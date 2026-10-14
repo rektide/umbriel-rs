@@ -321,6 +321,8 @@ Entry keys: `active, focused, id, index, layout, name, named, occupied, output`
 
 ### Smaller payloads
 
+<a id="layers"></a>
+
 - **Layers** (`ipc_commands.cpp:423-438`): entries `{layer, mapped, namespace,
   output}`; `layer` ∈ `background|bottom|top|overlay`, `mapped` bool.
 - **Submap**: bare string or `null`; submaps **nest** (live-verified ordering:
