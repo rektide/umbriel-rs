@@ -192,10 +192,13 @@ impl Endpoint {
 }
 
 impl Subscription {
+    /// Last owner-published state. After abrupt owner loss it is historical;
+    /// status-channel closure and DriverLost outcomes report that local loss.
     pub fn status(&self) -> Status {
         self.owner.status.borrow().clone()
     }
-    /// Latest health/readiness, not an every-transition stream. Use Observer for gaps.
+    /// Latest health/readiness, not an every-transition stream. Use Observer for
+    /// gaps; channel closure without normal completion signals driver loss.
     pub fn watch_status(&self) -> watch::Receiver<Status> {
         self.owner.status.clone()
     }
@@ -224,15 +227,17 @@ impl Subscription {
         request: Request<'_>,
         deadline: Duration,
     ) -> Result<RawReply, Error> {
-        let status = self.status();
-        if matches!(status.health, Health::Disconnected | Health::Closed) {
-            return Err(Error::Closed);
-        }
-        if epoch != status.epoch {
-            return Err(Error::StaleEpoch {
-                requested: epoch,
-                current: status.epoch,
-            });
+        {
+            let status = self.owner.status.borrow();
+            if matches!(status.health, Health::Disconnected | Health::Closed) {
+                return Err(Error::Closed);
+            }
+            if epoch != status.epoch {
+                return Err(Error::StaleEpoch {
+                    requested: epoch,
+                    current: status.epoch,
+                });
+            }
         }
         let permit = self
             .owner
@@ -307,14 +312,15 @@ struct Driver {
 
 impl Driver {
     fn publish(&mut self, item: Observation, position: u64) {
-        let mut kept = Vec::with_capacity(self.producers.len());
-        for producer in self.producers.drain(..) {
-            if producer.is_closed() {
+        let mut index = 0;
+        while index < self.producers.len() {
+            if self.producers[index].is_closed() {
+                self.producers.swap_remove(index);
                 continue;
             }
-            match producer.push(item.clone()) {
-                Ok(()) => kept.push(producer),
-                Err(_) => producer.finish(match &item {
+            match self.producers[index].push(item.clone()) {
+                Ok(()) => index += 1,
+                Err(_) => self.producers.swap_remove(index).finish(match &item {
                     Observation::Gap { terminal, .. } => DeliveryEnd::Source(terminal.clone()),
                     _ => DeliveryEnd::Lagged {
                         epoch: self.epoch,
@@ -323,7 +329,6 @@ impl Driver {
                 }),
             }
         }
-        self.producers = kept;
     }
 
     fn register(&mut self, register: Register) {
@@ -336,14 +341,20 @@ impl Driver {
             self.options.observer_capacity,
             self.options.observer_byte_capacity,
         );
-        let status = self.status.borrow().clone();
-        let announcement = if status.health == Health::Disconnected {
-            Observation::Gap {
-                epoch: self.epoch,
-                terminal: status.last_end.expect("disconnected reason"),
+        let announcement = {
+            let status = self.status.borrow();
+            if status.health == Health::Disconnected {
+                Observation::Gap {
+                    epoch: self.epoch,
+                    terminal: status
+                        .last_end
+                        .as_ref()
+                        .expect("disconnected reason")
+                        .clone(),
+                }
+            } else {
+                Observation::Epoch { epoch: self.epoch }
             }
-        } else {
-            Observation::Epoch { epoch: self.epoch }
         };
         if producer.push(announcement.clone()).is_err() {
             producer.finish(match announcement {
@@ -360,8 +371,10 @@ impl Driver {
     }
 
     fn expire_queue(&mut self) {
-        let mut kept = VecDeque::new();
-        for command in self.queue.drain(..) {
+        // Rotate exactly the bounded starting population. Surviving FIFO order
+        // and the existing backing storage are retained; no suspension occurs.
+        for _ in 0..self.queue.len() {
+            let command = self.queue.pop_front().expect("starting queue population");
             if command.reply.is_closed() {
                 continue;
             }
@@ -376,10 +389,24 @@ impl Driver {
                     reply_observed: false,
                 }));
             } else {
-                kept.push_back(command);
+                self.queue.push_back(command);
             }
         }
-        self.queue = kept;
+    }
+
+    fn update_status(&self, session: &Session, health: Health) {
+        let families = Family::ALL.map(|family| session.family_status(family));
+        self.status.send_if_modified(|status| {
+            if status.epoch == self.epoch && status.health == health && status.families == families
+            {
+                return false;
+            }
+            status.epoch = self.epoch;
+            status.health = health;
+            status.families = families;
+            // Historical terminal evidence is unchanged, not cloned/compared.
+            true
+        });
     }
 
     async fn connection(&mut self, socket: &UnixStream, session: &mut Session) {
@@ -400,13 +427,13 @@ impl Driver {
                 };
                 frames += 1;
                 match session.receive(frame) {
-                    Ok(Effect::Reply { .. }) => {
+                    Ok(Effect::Reply { message, .. }) => {
                         if let Some(command) = pending.take()
                             && !command.reply.is_closed()
                         {
-                            let _ = command.reply.send(Ok(RawReply {
-                                frame: Arc::from(frame),
-                            }));
+                            let _ = command
+                                .reply
+                                .send(Ok(RawReply::from_message(frame, message)));
                         }
                     }
                     Ok(
@@ -439,17 +466,14 @@ impl Driver {
             if session.terminal().is_some() {
                 break;
             }
-            let last_end = self.status.borrow().last_end.clone();
-            self.status.send_replace(status(
+            self.update_status(
                 session,
-                self.epoch,
                 if session.phase() == Phase::Streaming {
                     Health::Streaming
                 } else {
                     Health::Initializing
                 },
-                last_end,
-            ));
+            );
             self.expire_queue();
             if pending.is_none()
                 && session.phase() == Phase::Streaming
@@ -560,13 +584,7 @@ impl Driver {
                 let session = Session::subscription(&self.families, self.options.io.frame_limit)
                     .expect("fixed validated families");
                 self.epoch = self.epoch.checked_add(1)?;
-                let last_end = self.status.borrow().last_end.clone();
-                self.status.send_replace(status(
-                    &session,
-                    self.epoch,
-                    Health::Initializing,
-                    last_end,
-                ));
+                self.update_status(&session, Health::Initializing);
                 return Some((socket, session));
             }
         }
@@ -610,8 +628,7 @@ impl Driver {
             for producer in self.producers.drain(..) {
                 producer.finish(DeliveryEnd::Source(terminal.clone()));
             }
-            self.status
-                .send_modify(|status| status.health = Health::Closed);
+            self.update_status(&session, Health::Closed);
             self.done.send_replace(true);
             break;
         }
@@ -634,6 +651,159 @@ async fn receive_response<T>(response: oneshot::Receiver<Result<T, Error>>) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture() -> Driver {
+        let (_, command_rx) = mpsc::channel(16);
+        let (_, control_rx) = mpsc::channel(16);
+        let (_, close) = watch::channel(false);
+        let (done, _) = watch::channel(false);
+        let (status, _) = watch::channel(status(
+            &Session::one_shot(1024),
+            1,
+            Health::Initializing,
+            None,
+        ));
+        Driver {
+            endpoint: Endpoint::new("/not-connected"),
+            families: vec![Family::Windows],
+            options: SubscriptionOptions::default(),
+            command_rx,
+            control_rx,
+            close,
+            done,
+            status,
+            producers: Vec::with_capacity(8),
+            queue: VecDeque::with_capacity(8),
+            epoch: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn publication_retires_in_place_and_preserves_independent_delivery() {
+        let mut driver = fixture();
+        let (closed, dropped) = delivery::channel(1, 4096);
+        drop(dropped);
+        let (slow, mut stalled) = delivery::channel(1, 4096);
+        slow.push(Observation::Epoch { epoch: 1 }).unwrap();
+        let (fast, mut observer) = delivery::channel(1, 4096);
+        driver.producers.extend([closed, slow, fast]);
+        let pointer = driver.producers.as_ptr();
+        let capacity = driver.producers.capacity();
+        for position in 1..10 {
+            driver.publish(Observation::Epoch { epoch: 2 }, position);
+            assert!(matches!(
+                observer.recv().await,
+                Ok(Observation::Epoch { epoch: 2 })
+            ));
+            assert_eq!(driver.producers.as_ptr(), pointer);
+            assert_eq!(driver.producers.capacity(), capacity);
+        }
+        assert_eq!(driver.producers.len(), 1);
+        stalled.recv().await.unwrap();
+        assert!(matches!(
+            stalled.recv().await,
+            Err(DeliveryEnd::Lagged { position: 1, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn expiry_preserves_queue_storage_and_surviving_fifo_order() {
+        let mut driver = fixture();
+        let permits = Arc::new(Semaphore::new(8));
+        let first = Instant::now() + Duration::from_secs(100);
+        let last = first + Duration::from_secs(1);
+        let mut responses = Vec::new();
+        for (epoch, deadline) in [
+            (1, first),
+            (1, first),
+            (0, first),
+            (1, Instant::now()),
+            (1, last),
+        ] {
+            let (reply, response) = oneshot::channel();
+            driver.queue.push_back(Command {
+                epoch,
+                deadline,
+                reply,
+                prepared: PreparedCommand::new(Request::Msg("queued")).unwrap(),
+                _permit: permits.clone().try_acquire_owned().unwrap(),
+            });
+            responses.push(response);
+        }
+        drop(responses.remove(1)); // second waiter cancels before transmission
+        let capacity = driver.queue.capacity();
+        driver.expire_queue();
+        assert_eq!(driver.queue.capacity(), capacity);
+        assert_eq!(
+            driver
+                .queue
+                .iter()
+                .map(|command| command.deadline)
+                .collect::<Vec<_>>(),
+            vec![first, last]
+        );
+        assert!(matches!(
+            responses.remove(1).await.unwrap(),
+            Err(Error::StaleEpoch {
+                requested: 0,
+                current: 1
+            })
+        ));
+        assert!(matches!(
+            responses.remove(1).await.unwrap(),
+            Err(Error::TimedOut {
+                possibly_sent: false,
+                ..
+            })
+        ));
+        for _ in 0..10 {
+            driver.expire_queue();
+        }
+        assert_eq!(driver.queue.capacity(), capacity);
+        assert_eq!(driver.queue.len(), 2);
+    }
+
+    #[test]
+    fn status_only_notifies_changed_fields_and_keeps_historical_terminal_storage() {
+        let driver = fixture();
+        let mut receiver = driver.status.subscribe();
+        let mut core =
+            Session::subscription(&[Family::Windows, Family::KeyboardLayout], 1024).unwrap();
+        driver.update_status(&core, Health::Initializing);
+        driver.status.send_modify(|status| {
+            status.last_end = Some(Terminal {
+                reason: EndReason::TransportLost("historical detail".repeat(64)),
+                unresolved: None,
+            })
+        });
+        let old_pointer = match &receiver
+            .borrow_and_update()
+            .last_end
+            .as_ref()
+            .unwrap()
+            .reason
+        {
+            EndReason::TransportLost(text) => text.as_ptr(),
+            _ => unreachable!(),
+        };
+        for _ in 0..10 {
+            driver.update_status(&core, Health::Initializing);
+        }
+        assert!(!receiver.has_changed().unwrap());
+        let count = core.begin_write().unwrap().len();
+        core.write_progress(count).unwrap();
+        core.receive(br#"{"event":"windows","data":[]}"#).unwrap();
+        driver.update_status(&core, Health::Streaming);
+        assert!(receiver.has_changed().unwrap());
+        receiver.borrow_and_update();
+        core.receive(br#"{"event":"windows","data":[]}"#).unwrap();
+        driver.update_status(&core, Health::Streaming);
+        assert!(!receiver.has_changed().unwrap());
+        match &receiver.borrow().last_end.as_ref().unwrap().reason {
+            EndReason::TransportLost(text) => assert_eq!(text.as_ptr(), old_pointer),
+            _ => unreachable!(),
+        }
+    }
 
     #[tokio::test]
     async fn admitted_response_owner_loss_never_claims_nontransmission() {

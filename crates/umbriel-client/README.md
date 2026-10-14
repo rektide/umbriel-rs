@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
-    title: Implement Unix discovery, one-shot execution, and independently bounded subscription ownership
+    title: Implement and correct Unix discovery, request evidence, and bounded subscription ownership; remove source-obvious warm-path work
   - resource: ../umbriel-session/README.md
     title: Single wire slot and transmission uncertainty
   - resource: ../../design/architecture/architecture1.gpt6a.md
@@ -133,6 +133,14 @@ observers or replies. A full queue on source termination still retains the
 source terminal reason separately. No latest-state coalescing is performed.
 Caller-retained frames and retired intervals are caller-owned storage.
 
+Publication retires failed observers in the existing bounded vector; observer
+iteration order is not a cross-observer delivery barrier. Command expiry retains
+queue storage and survivor FIFO order. Health/readiness watchers are notified
+only when represented fields change, without copying unchanged historical
+terminal text. `RawReply` privately retains its validated reply kind, so success
+decoding need not reclassify the envelope before the caller-selected decode.
+These are source-level work removals, not measured performance claims.
+
 `Observation::message` returns `Result<Option<Message>, sonic_rs::Error>`:
 non-frame observations are `Ok(None)`, and malformed caller-constructed frames
 are decode errors rather than panics. Private validated `RawReply::message`
@@ -140,6 +148,9 @@ remains infallible. If the driver disappears without a recorded native terminal,
 observers drain queued items then retain `DeliveryEnd::DriverLost`; admitted
 command/registration response loss returns `Error::DriverLost`, not an unsent
 `Closed` result. Such local loss cannot prove non-transmission or safe retry.
+The status channel also closes on abrupt driver disappearance; its last retained
+status is historical, not a new health or native completion receipt. No implicit
+supervision/restart or synthetic native terminal is added.
 For one-shot EOF deadlines, `reply_observed: true` also implies `possibly_sent:
 true`, even though the session's wire slot already retired at the reply.
 

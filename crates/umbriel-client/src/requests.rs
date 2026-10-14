@@ -91,9 +91,27 @@ pub enum Error {
 /// projections without allocating a full owned model tree.
 #[derive(Debug, Clone)]
 pub struct RawReply {
-    pub(crate) frame: Arc<[u8]>,
+    frame: Arc<[u8]>,
+    kind: ReplyKind,
+}
+#[derive(Debug, Clone, Copy)]
+enum ReplyKind {
+    Ok,
+    Err,
 }
 impl RawReply {
+    /// The session already validated and classified this exact frame.
+    pub(crate) fn from_message(frame: &[u8], message: Message<'_>) -> Self {
+        let kind = match message {
+            Message::Ok(_) => ReplyKind::Ok,
+            Message::Err(_) => ReplyKind::Err,
+            _ => unreachable!("session reply effect is ok or err"),
+        };
+        Self {
+            frame: Arc::from(frame),
+            kind,
+        }
+    }
     pub fn frame(&self) -> &[u8] {
         &self.frame
     }
@@ -101,8 +119,8 @@ impl RawReply {
         Message::decode(&self.frame).expect("validated reply")
     }
     pub fn decode<'a, T: Deserialize<'a>>(&'a self) -> Result<T, Error> {
-        match self.message() {
-            Message::Ok(_) => {
+        match &self.kind {
+            ReplyKind::Ok => {
                 #[derive(Deserialize)]
                 struct Success<T> {
                     ok: T,
@@ -111,8 +129,12 @@ impl RawReply {
                     .map(|reply| reply.ok)
                     .map_err(Error::Decode)
             }
-            Message::Err(text) => Err(Error::Remote(text.into_owned())),
-            _ => unreachable!("reply validated by session"),
+            ReplyKind::Err => {
+                let Message::Err(text) = self.message() else {
+                    unreachable!("validated remote rejection")
+                };
+                Err(Error::Remote(text.into_owned()))
+            }
         }
     }
 }
@@ -132,10 +154,8 @@ impl Endpoint {
         let result = timeout(options.request_timeout, async {
             loop {
                 while let Some(frame) = framer.next_frame() {
-                    if let Effect::Reply { .. } = session.receive(frame)? {
-                        reply = Some(RawReply {
-                            frame: Arc::from(frame),
-                        });
+                    if let Effect::Reply { message, .. } = session.receive(frame)? {
+                        reply = Some(RawReply::from_message(frame, message));
                     }
                 }
                 if session.terminal().is_some() {

@@ -59,8 +59,14 @@ async fn real_split_reply_and_remote_error() {
     let reply = exchange(vec![b"{\"ok\":", b"null}", b"\n"]).await.unwrap();
     assert_eq!(reply.decode::<Option<String>>().unwrap(), None);
     assert!(matches!(reply.decode::<bool>(), Err(Error::Decode(_))));
+    let borrowed = exchange(vec![b"{\"ok\":\"borrowed\",\"extra\":{\"nested\":true}}\n"])
+        .await
+        .unwrap();
+    assert_eq!(borrowed.decode::<&str>().unwrap(), "borrowed");
+    assert_eq!(borrowed.clone().decode::<String>().unwrap(), "borrowed");
     let reply = exchange(vec![b"{\"err\":\"nope\"}\n"]).await.unwrap();
     assert!(matches!(reply.decode::<()>(), Err(Error::Remote(text)) if text == "nope"));
+    assert!(matches!(reply.clone().decode::<()>(), Err(Error::Remote(text)) if text == "nope"));
     let reply = exchange(vec![b"{\"err\":\"request too long\"}\n"])
         .await
         .unwrap();

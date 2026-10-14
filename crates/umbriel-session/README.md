@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
-    title: Add validated prepared admission for bounded runtime ingress without another reply ledger
+    title: Add validated prepared admission for bounded runtime ingress and preserve reusable direct encoding without another reply ledger
   - resource: opencode://ses_ec7a6b0aeffeO1NsW5IPjs6snU
     title: Implemented the bounded session ledger and deterministic ownership transcripts
   - resource: ../../design/protocol/review0.gpt6a.md
@@ -27,7 +27,7 @@ sources:
   - resource: ../umbriel-protocol/src/request.rs
     title: Existing typed Request encoder and raw-command escape hatch
 verification:
-  method: 30 deterministic nextest cases, one README doctest, crate fmt check, and all-targets Clippy with warnings denied.
+  method: 31 deterministic nextest cases, one README doctest, crate fmt check, and all-targets Clippy with warnings denied.
   limits: No sockets, live compositor probes, timing benchmarks, or runtime adapter were used.
 ---
 
@@ -126,6 +126,10 @@ bounded storage into the existing slot. There is no raw-byte constructor and
 subscribe remains forbidden. This small admission extension leaves the original
 ledger, write accounting, and deterministic transcripts intact; the predecessor
 was already checkpointed before this extension.
+Direct `Session::admit(Request)` retains and reuses the session's outbound
+allocation instead of allocating a prepared command. Both paths share the same
+ordinary-command/no-subscribe check and checked protocol encoder; prepared
+admission still transfers prevalidated storage without encoding it again.
 
 The adapter must retain this core independently of disposable waiting futures,
 continuously drain subscribed input, and close its socket when terminal appears.

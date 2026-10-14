@@ -207,16 +207,7 @@ pub struct PreparedCommand(Vec<u8>);
 
 impl PreparedCommand {
     pub fn new(request: Request<'_>) -> Result<Self, Error> {
-        if matches!(
-            request,
-            Request::Subscribe(_)
-                | Request::Raw {
-                    cmd: "subscribe",
-                    ..
-                }
-        ) {
-            return Err(Error::UnsupportedSubscribe);
-        }
+        ensure_ordinary(&request)?;
         let mut bytes = Vec::new();
         request.encode(&mut bytes)?;
         Ok(Self(bytes))
@@ -286,7 +277,14 @@ impl Session {
     /// Raw `subscribe` is rejected too; it cannot bypass the fixed-set contract.
     pub fn admit(&mut self, request: Request<'_>) -> Result<LocalRequestId, Error> {
         self.ensure_admission()?;
-        self.admit_prepared(PreparedCommand::new(request)?)
+        ensure_ordinary(&request)?;
+        self.last_request_id
+            .checked_add(1)
+            .ok_or(Error::LocalRequestIdsExhausted)?;
+        // Direct sans-I/O callers reuse the retained outbound allocation. The
+        // same checked encoder/no-subscribe rule applies to prepared admission.
+        request.encode(&mut self.outbound)?;
+        self.install_slot()
     }
 
     /// Transfer already checked storage without encoding again or bypassing validation.
@@ -580,9 +578,49 @@ const fn family_index(family: Family) -> usize {
     }
 }
 
+fn ensure_ordinary(request: &Request<'_>) -> Result<(), Error> {
+    if matches!(
+        request,
+        Request::Subscribe(_)
+            | Request::Raw {
+                cmd: "subscribe",
+                ..
+            }
+    ) {
+        return Err(Error::UnsupportedSubscribe);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_admission_reuses_checked_outbound_storage() {
+        let mut core = Session::subscription(&[Family::Windows], 1024).unwrap();
+        let count = core.begin_write().unwrap().len();
+        core.write_progress(count).unwrap();
+        core.receive(br#"{"event":"windows","data":[]}"#).unwrap();
+        core.admit(Request::Msg(&"x".repeat(4096))).unwrap();
+        let pointer = core.outbound.as_ptr();
+        let capacity = core.outbound.capacity();
+        let count = core.begin_write().unwrap().len();
+        core.write_progress(count).unwrap();
+        core.receive(br#"{"ok":null}"#).unwrap();
+        assert!(matches!(
+            core.admit(Request::Subscribe(&[Family::Windows])),
+            Err(Error::UnsupportedSubscribe)
+        ));
+        assert_eq!(core.outbound.as_ptr(), pointer);
+        assert_eq!(core.outbound.capacity(), capacity);
+        core.admit(Request::Msg("short")).unwrap();
+        assert_eq!(core.outbound.as_ptr(), pointer);
+        assert_eq!(core.outbound.capacity(), capacity);
+        let mut expected = Vec::new();
+        Request::Msg("short").encode(&mut expected).unwrap();
+        assert_eq!(core.outbound(), expected);
+    }
 
     #[test]
     fn local_request_ids_never_wrap_or_mutate_failed_admission() {
