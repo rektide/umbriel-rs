@@ -1,0 +1,10 @@
+[package]
+name = "umbriel-state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Optional observed inventories and clock-injected stable-active reduction"
+
+[dependencies]
+umbriel-protocol = { path = "../umbriel-protocol" }
+kubeless-view-memory = { path = "../../../kubeless/view/memory", version = "=0.1.0" }
