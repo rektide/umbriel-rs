@@ -1,5 +1,5 @@
 //! Complete family replacement and explicit source health.
-use kubeless_view_memory::{Reader, Replacement, Writer, memory_view};
+use kubeless_view_memory::{ChangeSet, Commit, Reader, Replacement, Writer, memory_view};
 use std::{collections::BTreeMap, fmt, hash::Hash, sync::Arc, time::Duration};
 use umbriel_protocol::{envelope::Family, model::*};
 
@@ -97,6 +97,25 @@ struct Relation<K, V> {
     order: Vec<K>,
 }
 
+/// Actual local window replacement receipt, not a compositor transition log.
+/// Equal rows remain in `commit.evidence`; consumers choose semantic filtering.
+/// Transition order is unspecified, unlike the inventory's native source order.
+#[derive(Debug, Clone)]
+pub struct WindowChanges {
+    pub before: Status,
+    pub after: Status,
+    pub commit: Commit<ChangeSet<WindowId, Arc<Window>>>,
+}
+
+impl WindowChanges {
+    /// Both snapshots belong to the same uninterrupted observed source interval.
+    /// This does not prove that the compositor emitted every physical transition.
+    pub fn is_continuous(&self) -> bool {
+        self.before.health == Health::Current
+            && self.before.stamp.map(|s| s.epoch) == self.after.stamp.map(|s| s.epoch)
+    }
+}
+
 impl<K: Clone + Eq + Hash + Ord, V> Relation<K, V> {
     fn new() -> Self {
         let (reader, writer) = memory_view();
@@ -114,23 +133,29 @@ impl<K: Clone + Eq + Hash + Ord, V> Relation<K, V> {
             source_order: self.order.clone(),
         }
     }
-    fn replace(&mut self, stamp: Stamp, rows: Vec<(K, V)>) -> Result<(), Error> {
+    fn replace(
+        &mut self,
+        stamp: Stamp,
+        rows: Vec<(K, V)>,
+        changes: bool,
+    ) -> Result<Option<Commit<ChangeSet<K, Arc<V>>>>, Error> {
         self.status.last_attempt = Some(stamp);
-        let mut replacement = Replacement::with_capacity(rows.len());
-        let mut order = Vec::with_capacity(rows.len());
-        for (key, value) in rows {
-            order.push(key.clone());
-            if replacement.upsert(key, value).is_some() {
-                self.status.stale(StaleReason::InvalidSnapshot);
-                return Err(Error::DuplicateId);
-            }
-        }
+        let order = rows.iter().map(|(key, _)| key.clone()).collect();
+        let replacement = Replacement::try_from_entries(rows).map_err(|_| {
+            self.status.stale(StaleReason::InvalidSnapshot);
+            Error::DuplicateId
+        })?;
         // No public memory reader/writer can race the accompanying metadata.
-        self.writer.replace_affected(replacement);
+        let receipt = if changes {
+            Some(self.writer.replace_changes(replacement))
+        } else {
+            self.writer.replace_affected(replacement);
+            None
+        };
         self.order = order;
         self.status.stamp = Some(stamp);
         self.status.health = Health::Current;
-        Ok(())
+        Ok(receipt)
     }
 }
 
@@ -245,6 +270,35 @@ impl Inventory {
     /// unusual punctuation remain valid identity text. Empty workspace references
     /// on window rows remain valid and are represented explicitly by the join.
     pub fn install(&mut self, stamp: Stamp, event: Event) -> Result<(), Error> {
+        self.install_inner(stamp, event, false).map(|_| ())
+    }
+
+    /// Opt in to retaining before/after window handles from the actual writer.
+    /// Uses the same validation, source ordering and health path as [`Self::install`].
+    /// Ordinary installation does not retain this rich evidence. Rejection returns
+    /// no receipt and preserves installed rows/order/stamp (health may go stale).
+    pub fn install_windows_changes(
+        &mut self,
+        stamp: Stamp,
+        windows: Windows,
+    ) -> Result<WindowChanges, Error> {
+        let before = self.windows.status;
+        let commit = self
+            .install_inner(stamp, Event::Windows(windows), true)?
+            .expect("window evidence requested");
+        Ok(WindowChanges {
+            before,
+            after: self.windows.status,
+            commit,
+        })
+    }
+
+    fn install_inner(
+        &mut self,
+        stamp: Stamp,
+        event: Event,
+        changes: bool,
+    ) -> Result<Option<Commit<ChangeSet<WindowId, Arc<Window>>>>, Error> {
         if stamp.epoch != self.epoch {
             return Err(Error::WrongEpoch);
         }
@@ -272,16 +326,35 @@ impl Inventory {
             return Err(Error::EmptyId);
         }
         match event {
-            Event::Windows(rows) => self
-                .windows
-                .replace(stamp, rows.into_iter().map(|r| (r.id.clone(), r)).collect()),
+            Event::Windows(rows) => self.windows.replace(
+                stamp,
+                rows.into_iter().map(|r| (r.id.clone(), r)).collect(),
+                changes,
+            ),
             Event::Workspaces(rows) => self
                 .workspaces
-                .replace(stamp, rows.into_iter().map(|r| (r.id.clone(), r)).collect()),
-            Event::Theme(value) => self.theme.replace(stamp, vec![((), *value)]),
-            Event::Overview(value) => self.overview.replace(stamp, vec![((), value)]),
-            Event::KeyboardLayout(value) => self.keyboard.replace(stamp, vec![((), value)]),
-            Event::Submap(value) => self.submap.replace(stamp, vec![((), value)]),
+                .replace(
+                    stamp,
+                    rows.into_iter().map(|r| (r.id.clone(), r)).collect(),
+                    false,
+                )
+                .map(|_| None),
+            Event::Theme(value) => self
+                .theme
+                .replace(stamp, vec![((), *value)], false)
+                .map(|_| None),
+            Event::Overview(value) => self
+                .overview
+                .replace(stamp, vec![((), value)], false)
+                .map(|_| None),
+            Event::KeyboardLayout(value) => self
+                .keyboard
+                .replace(stamp, vec![((), value)], false)
+                .map(|_| None),
+            Event::Submap(value) => self
+                .submap
+                .replace(stamp, vec![((), value)], false)
+                .map(|_| None),
         }
     }
 

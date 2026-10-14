@@ -888,6 +888,13 @@ name = "kubeless-view-change"
 version = "0.1.0"
 
 [[package]]
+name = "kubeless-view-impact"
+version = "0.1.0"
+dependencies = [
+ "kubeless-view-change",
+]
+
+[[package]]
 name = "kubeless-view-memory"
 version = "0.1.0"
 dependencies = [
@@ -2229,6 +2236,7 @@ name = "umbriel-client"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "kubeless-view-impact",
  "serde",
  "shlex",
  "socket2",

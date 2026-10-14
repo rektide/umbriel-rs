@@ -15,6 +15,7 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
+kubeless-view-impact = { path = "../../../kubeless/view/impact" }
 umbriel-state = { path = "../umbriel-state" }
 tokio = { version = "1.48", features = ["io-util", "test-util", "rt-multi-thread"] }
 tempfile = "3"
@@ -23,6 +24,10 @@ shlex = "2.0.1"
 
 [[example]]
 name = "active_window"
+test = true
+
+[[example]]
+name = "window_changes"
 test = true
 
 [[bin]]

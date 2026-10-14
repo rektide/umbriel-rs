@@ -309,3 +309,207 @@ fn singleton_null_and_local_ordering_are_explicit() {
     );
     assert!(inventory.snapshot().submap.entries()[&()].is_none());
 }
+
+#[test]
+fn window_receipts_share_installation_and_preserve_actual_occupancy() {
+    let mut inventory = Inventory::new(1);
+    let first = inventory
+        .install_windows_changes(stamp(1, 1), vec![window("B"), window("A")])
+        .unwrap();
+    assert!(!first.is_continuous());
+    assert_eq!(first.before.health, Health::Unseen);
+    assert_eq!(first.commit.generation.get(), 1);
+    assert!(
+        first
+            .commit
+            .evidence
+            .get(&"A".into())
+            .unwrap()
+            .before
+            .is_none()
+    );
+    let before = inventory.snapshot();
+    let mut moved = window("A");
+    moved.workspace = "other".into();
+    let second = inventory
+        .install_windows_changes(stamp(1, 2), vec![moved.clone(), window("C")])
+        .unwrap();
+    assert!(second.is_continuous());
+    let a = second.commit.evidence.get(&"A".into()).unwrap();
+    assert_eq!(a.before.as_ref().unwrap().workspace.as_str(), "ws");
+    assert_eq!(a.after.as_ref().unwrap().workspace.as_str(), "other");
+    assert!(std::sync::Arc::ptr_eq(
+        a.before.as_ref().unwrap(),
+        &before.windows.entries()[&"A".into()]
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        a.after.as_ref().unwrap(),
+        &inventory.snapshot().windows.entries()[&"A".into()]
+    ));
+    assert!(
+        second
+            .commit
+            .evidence
+            .get(&"B".into())
+            .unwrap()
+            .after
+            .is_none()
+    );
+    assert!(
+        second
+            .commit
+            .evidence
+            .get(&"C".into())
+            .unwrap()
+            .before
+            .is_none()
+    );
+    assert_eq!(
+        inventory.snapshot().windows.source_order(),
+        &[WindowId::from("A"), WindowId::from("C")]
+    );
+
+    let mut equal = inventory
+        .install_windows_changes(stamp(1, 3), vec![window("C"), moved])
+        .unwrap();
+    assert_eq!(
+        equal.commit.evidence.len(),
+        2,
+        "actual equal touches retained"
+    );
+    equal.commit.evidence.retain(|row| row.before != row.after);
+    assert!(equal.commit.evidence.is_empty());
+    assert_eq!(
+        inventory.snapshot().windows.source_order(),
+        &[WindowId::from("C"), WindowId::from("A")]
+    );
+    let retained = inventory.snapshot();
+    assert!(matches!(
+        inventory
+            .install_windows_changes(stamp(1, 4), vec![window("D"), window("D"), window("tail")]),
+        Err(Error::DuplicateId)
+    ));
+    let rejected = inventory.snapshot();
+    assert_eq!(rejected.windows.entries(), retained.windows.entries());
+    assert_eq!(
+        rejected.windows.source_order(),
+        retained.windows.source_order()
+    );
+    assert_eq!(rejected.windows.status.stamp, Some(stamp(1, 3)));
+    assert_eq!(rejected.windows.status.last_attempt, Some(stamp(1, 4)));
+    let empty = inventory
+        .install_windows_changes(stamp(1, 5), vec![])
+        .unwrap();
+    assert!(!empty.is_continuous());
+    assert_eq!(
+        empty.before.health,
+        Health::Stale(StaleReason::InvalidSnapshot)
+    );
+    assert_eq!(
+        empty.commit.generation.get(),
+        4,
+        "rejection does not commit"
+    );
+    assert!(
+        empty
+            .commit
+            .evidence
+            .iter()
+            .all(|row| row.before.is_some() && row.after.is_none())
+    );
+    assert!(inventory.snapshot().windows.source_order().is_empty());
+    assert_eq!(empty.after.health, Health::Current);
+    assert!(
+        inventory
+            .install_windows_changes(stamp(1, 6), vec![])
+            .unwrap()
+            .commit
+            .evidence
+            .is_empty()
+    );
+}
+
+#[test]
+fn window_receipts_label_gaps_epochs_and_ordinary_installs() {
+    let mut inventory = Inventory::new(1);
+    inventory
+        .install(stamp(1, 1), Event::Windows(vec![window("A")]))
+        .unwrap();
+    let prior = inventory.snapshot().windows.entries()[&"A".into()].clone();
+    let weak = std::sync::Arc::downgrade(&prior);
+    drop(prior);
+    // The ordinary path does not retain a former-row receipt.
+    inventory
+        .install(stamp(1, 2), Event::Windows(vec![window("B")]))
+        .unwrap();
+    assert!(weak.upgrade().is_none());
+    let receipt = inventory
+        .install_windows_changes(stamp(1, 3), vec![window("C")])
+        .unwrap();
+    assert!(receipt.is_continuous());
+    assert_eq!(receipt.commit.generation.get(), 3);
+    assert_eq!(receipt.before.stamp, Some(stamp(1, 2)));
+    inventory.gap();
+    assert!(matches!(
+        inventory.install_windows_changes(stamp(1, 4), vec![]),
+        Err(Error::SourceGap)
+    ));
+    assert_eq!(
+        inventory.status(Family::Windows).health,
+        Health::Stale(StaleReason::Gap)
+    );
+    inventory.begin_epoch(2).unwrap();
+    let reacquired = inventory
+        .install_windows_changes(stamp(2, 1), vec![window("D")])
+        .unwrap();
+    assert!(!reacquired.is_continuous());
+    assert_eq!(
+        reacquired.before.health,
+        Health::Stale(StaleReason::EpochChanged)
+    );
+    assert_eq!(reacquired.before.stamp, Some(stamp(1, 3)));
+    assert!(
+        reacquired
+            .commit
+            .evidence
+            .get(&"C".into())
+            .unwrap()
+            .after
+            .is_none()
+    );
+    assert!(
+        inventory
+            .install_windows_changes(stamp(2, 2), vec![window("D")])
+            .unwrap()
+            .is_continuous()
+    );
+    inventory.invalid_snapshot(Family::Windows);
+    assert!(
+        !inventory
+            .install_windows_changes(stamp(2, 3), vec![])
+            .unwrap()
+            .is_continuous()
+    );
+    assert!(matches!(
+        inventory.install_windows_changes(stamp(1, 99), vec![]),
+        Err(Error::WrongEpoch)
+    ));
+    assert!(matches!(
+        inventory.install_windows_changes(stamp(2, 3), vec![]),
+        Err(Error::NonIncreasingPosition)
+    ));
+    assert!(matches!(
+        inventory.install_windows_changes(
+            Stamp {
+                observed_at: Duration::ZERO,
+                ..stamp(2, 4)
+            },
+            vec![]
+        ),
+        Err(Error::TimeWentBackwards)
+    ));
+    assert!(matches!(
+        inventory.install_windows_changes(stamp(2, 5), vec![window("")]),
+        Err(Error::EmptyId)
+    ));
+}
