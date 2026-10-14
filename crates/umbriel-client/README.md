@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Umbriel Tokio Unix client
-description: On-demand one-shot sockets, separately driven bounded subscriptions, and a read-only desktop-dump executable/example.
+description: One-shot sockets, bounded subscriptions, and read-only desktop capture with inferred layout shape and opt-in existing Wayland output inspection.
 resource: crates/umbriel-client/README.md
 status: implemented
 generated:
@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#high
 sources:
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
-    title: Add and verify desktop capture and geometry-derived layout shape; preserve raw fields and distinguish reported facts from inferred structure without compositor changes
+    title: Build and verify desktop capture, inferred layout shape, and bounded opt-in Wayland output-tool reuse without changing the compositor
   - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
     title: Implement and correct Unix discovery, request evidence, and bounded subscription ownership; remove source-obvious warm-path work
   - resource: ../umbriel-session/README.md
@@ -26,8 +26,10 @@ sources:
     title: Checked available window/workspace/layer/color/tearing fields and the explicit no-keyboard query rejection
   - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/server/ipc.cpp
     title: Checked theme and overview payloads available through initial subscription events
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/cli/outputs.cpp
+    title: Checked the existing read-only Wayland output-management client, display selection, and full JSON monitor fields
 verification:
-  method: Scripted Unix peer tests and paused Tokio time; all 53 client tests, two doctests, formatting, and all-targets Clippy; release desktop-dump build and read-only live capture of 29 windows and eight workspaces.
+  method: Scripted Unix peer tests and paused Tokio time; all 55 client tests, two doctests, formatting, and all-targets Clippy; release desktop-dump build and read-only live capture of 29 windows, eight workspaces, and two monitors.
   limits: No live compositor mutation, production deployment, throughput benchmark, state store, or columnar execution.
 ---
 
@@ -99,11 +101,26 @@ ambiguous workspace references remain separate. No hidden weights, split ratios,
 master roles, or scroll offsets are fabricated. See the
 [shape guide](../../README.md#general-layout-shape-without-compositor-changes).
 
+`--outputs-display DISPLAY` optionally adds `outputs.data` by running the existing
+`umbriel outputs --json` read-only Wayland client. The exact executable path can
+be selected with `--outputs-tool PATH`; no shell is invoked, and `UMBRIEL_SOCKET`
+is removed from the child's environment because output inspection is not IPC.
+The selected `WAYLAND_DISPLAY` and inherited `XDG_RUNTIME_DIR` are recorded.
+`same_compositor_verified: false` leaves source matching with the caller; an IPC
+path does not establish Wayland-display identity. The monitor payload preserves
+all JSON fields, including mode/position/scale/transform and unknown additions.
+Collection uses the configured deadline, an 8 MiB default stdout bound (the IPC
+frame-limit option internally), and a 64 KiB stderr bound, draining both streams
+concurrently. Failed/timed-out/oversized subprocesses are terminated and reaped;
+requested output inspection errors abort before stdout publication. Without this
+flag, capture remains native IPC-only and does not execute any external tool.
+
 The dump includes all exposed window and layout facts, with `atomic: false` and
 explicit limitations. It is evidence for a future restore planner, **not** a
-complete replay recipe. Output geometry/mode/scale/transform, internal layout
-trees/ratios/column membership/scroll offsets, layer-surface geometry, launch
-commands and application documents/session contents are absent from IPC. IDs and
+complete replay recipe. Output geometry/mode/scale/transform are absent from IPC
+but available through the optional Wayland command. Internal layout trees/ratios/
+column membership/scroll offsets, layer-surface geometry, launch commands and
+application documents/session contents remain unavailable. IDs and
 PIDs are not durable relaunch identities. Consult the
 [root capture guide](../../README.md#build-an-executable-and-capture-the-desktop)
 for geometry semantics and privacy cautions; the
@@ -249,3 +266,6 @@ no desktop restoration was attempted. Shape tests cover scrolling rows/columns,
 nested tiling, master and unknown modes, overlap ambiguity, touching edges,
 empty/duplicate IDs, floating/scratchpad/unmatched windows, extreme coordinates,
 and bounded deep inference with no lost window references.
+Output-tool tests cover explicit selection, fixed read-only arguments,
+space-containing executable/display names, raw-field retention, diagnostic
+retention, spawn/exit/decode/shape failures, stdout/stderr limits, and timeout.

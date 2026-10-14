@@ -1,6 +1,8 @@
 //! Exercise the shipped binary against scripted, strictly read-only Unix peers.
 use std::{
-    path::PathBuf,
+    ffi::OsString,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
     process::{Command, Output},
 };
 
@@ -44,6 +46,10 @@ struct Script {
 }
 
 async fn run(script: Script) -> Output {
+    run_with(script, Vec::new()).await
+}
+
+async fn run_with(script: Script, extra_args: Vec<OsString>) -> Output {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("scripted.sock");
     let listener = UnixListener::bind(&path).unwrap();
@@ -109,7 +115,7 @@ async fn run(script: Script) -> Output {
         stream.read_to_end(&mut rest).await.unwrap();
         assert!(rest.is_empty(), "capture must never issue desktop actions");
     });
-    let output = tokio::task::spawn_blocking(move || invoke(path))
+    let output = tokio::task::spawn_blocking(move || invoke_with(path, extra_args))
         .await
         .unwrap();
     peer.await.unwrap();
@@ -117,10 +123,15 @@ async fn run(script: Script) -> Output {
 }
 
 fn invoke(path: PathBuf) -> Output {
+    invoke_with(path, Vec::new())
+}
+
+fn invoke_with(path: PathBuf, extra_args: Vec<OsString>) -> Output {
     Command::new(BIN)
         .arg("--socket")
         .arg(path)
         .args(["--timeout-ms", "500"])
+        .args(extra_args)
         .output()
         .unwrap()
 }
@@ -141,6 +152,10 @@ async fn captures_all_available_state_and_preserves_unknown_fields() {
     assert_eq!(value["format"].as_str(), Some("umbriel-desktop-dump"));
     assert_eq!(value["schema_version"].as_u64(), Some(1));
     assert_eq!(value["atomic"].as_bool(), Some(false));
+    assert!(
+        value.get("outputs").is_none(),
+        "Wayland inspection must be explicitly requested"
+    );
     assert_eq!(value["queries"].as_object().unwrap().len(), 7);
     assert_eq!(value["events"].as_object().unwrap().len(), 2);
     for query in Query::ALL {
@@ -304,6 +319,8 @@ fn cli_help_version_and_argument_validation_need_no_compositor() {
         vec!["--socket"],
         vec!["--timeout-ms", "0"],
         vec!["--unknown"],
+        vec!["--outputs-tool", "/path/to/cli"],
+        vec!["--outputs-display"],
     ] {
         failed(Command::new(BIN).args(args).output().unwrap());
     }
@@ -313,4 +330,78 @@ fn cli_help_version_and_argument_validation_need_no_compositor() {
 fn connection_failure_has_no_partial_stdout() {
     let dir = tempfile::tempdir().unwrap();
     failed(invoke(dir.path().join("absent.sock")));
+}
+
+fn output_tool(dir: &Path, body: &str) -> PathBuf {
+    let path = dir.join("output tool with spaces");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\n\
+        [ \"$#\" = 2 ] || exit 90\n\
+        [ \"$1\" = outputs ] || exit 91\n\
+        [ \"$2\" = --json ] || exit 92\n\
+        [ \"$WAYLAND_DISPLAY\" = 'fake display' ] || exit 93\n\
+        [ -z \"${{UMBRIEL_SOCKET+x}}\" ] || exit 94\n\
+        {body}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    path
+}
+
+fn output_args(path: &Path) -> Vec<OsString> {
+    vec![
+        "--outputs-display".into(),
+        "fake display".into(),
+        "--outputs-tool".into(),
+        path.as_os_str().into(),
+    ]
+}
+
+#[tokio::test]
+async fn opt_in_output_capture_is_read_only_explicitly_scoped_and_lossless() {
+    let dir = tempfile::tempdir().unwrap();
+    let tool = output_tool(
+        dir.path(),
+        "printf '%s\\n' '[{\"name\":\"MON-1\",\"position\":{\"x\":-1080,\"y\":0},\"scale\":1.5,\"transform\":\"90\",\"modes\":[{\"width\":1920,\"height\":1080,\"refresh_mhz\":60000,\"current\":true}],\"future_field\":42}]'\nprintf 'tool warning' >&2",
+    );
+    let value = dump(run_with(Script::default(), output_args(&tool)).await);
+    let outputs = &value["outputs"];
+    assert_eq!(outputs["status"].as_str(), Some("ok"));
+    assert_eq!(outputs["wayland_display"].as_str(), Some("fake display"));
+    assert_eq!(outputs["same_compositor_verified"].as_bool(), Some(false));
+    assert_eq!(outputs["tool_stderr"].as_str(), Some("tool warning"));
+    assert_eq!(outputs["data"][0]["position"]["x"].as_i64(), Some(-1080));
+    assert_eq!(outputs["data"][0]["scale"].as_f64(), Some(1.5));
+    assert_eq!(outputs["data"][0]["future_field"].as_u64(), Some(42));
+    assert!(
+        outputs["received_elapsed_ms"].as_u64().unwrap() <= value["elapsed_ms"].as_u64().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn requested_output_capture_failures_do_not_publish_partial_json() {
+    let dir = tempfile::tempdir().unwrap();
+    for body in [
+        "printf 'denied' >&2\nexit 3",
+        "printf 'not json'",
+        "printf '{}'",
+        "printf '[1]'",
+        // exec ensures the bounded helper itself, not a background descendant, hangs.
+        "exec sleep 10",
+        "exec head -c 9000000 /dev/zero",
+        "exec head -c 70000 /dev/zero >&2",
+    ] {
+        let tool = output_tool(dir.path(), body);
+        failed(run_with(Script::default(), output_args(&tool)).await);
+    }
+    failed(
+        run_with(
+            Script::default(),
+            output_args(&dir.path().join("absent tool")),
+        )
+        .await,
+    );
 }

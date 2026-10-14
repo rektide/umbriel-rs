@@ -1,7 +1,7 @@
 ---
 type: Project
 title: umbriel-rs
-description: Native Rust Umbriel protocol libraries, a read-only desktop-dump executable, observations, and Polars-native batches.
+description: Native Rust Umbriel protocol libraries, read-only desktop capture with inferred layout shape and optional monitor inspection, observations, and Polars-native batches.
 resource: README.md
 status: draft
 generated:
@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#high
 sources:
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
-    title: Build and verify the desktop-dump tool; follow human direction to derive useful layout shape without modifying the compositor
+    title: Build and verify desktop capture, inferred layout shape, and opt-in existing Wayland output inspection without compositor modifications
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
     title: Implement and verify the six-crate library, review measured results and reuse boundaries, and rewrite the usage guide
   - resource: design/architecture/architecture1.gpt6a.md
@@ -46,6 +46,8 @@ the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 - Continuously driven subscriptions with independent bounded observers and
   cancellation-safe command ownership.
 - A read-only **desktop JSON dump** executable and example.
+- Geometry-derived **layout shape** and optional existing Wayland monitor inspection,
+  with **no compositor patches**.
 - A native **750 ms stable-active-window** example—not the project's goal.
 - Complete snapshot batches, lazy queries, and derived output with provenance.
   **No C Data Interface bridge.**
@@ -93,9 +95,10 @@ cargo run -p umbriel-client --example desktop_dump -- > desktop.json
 
 **A capture, not a complete restore recipe.** The JSON declares `atomic: false`,
 records per-payload local observation offsets, and lists missing information.
-Separate queries/events can race. IPC does not expose monitor positions/modes/
-scale/transforms, layout trees/column membership/split ratios/scroll offsets, or
-application launch commands and documents. Window positions are layout targets;
+Separate queries/events can race. IPC does not expose exact layout trees/column
+membership/split ratios/scroll offsets or application launch commands/documents.
+Monitor configuration is available through the optional Wayland inspection below,
+not IPC. Window positions are layout targets;
 sizes are committed content geometry. IDs/PIDs are live-session identities,
 not durable application identities. This tool neither relaunches nor moves
 anything. Dumps can contain private window titles; store/share them accordingly.
@@ -124,6 +127,31 @@ indices, so empty/duplicate window IDs do not lose windows. This provides the
 general shape useful for approximate recreation, not hidden split ratios or
 the unique original tiling history. It does not capture app contents (tabs,
 documents, running terminal processes); those are separate from desktop layout.
+
+### Include monitor topology using existing tooling
+
+For the fullest capture without compositor changes, use the installed `umbriel`
+CLI's **read-only** Wayland output-management inspection:
+
+```sh
+./target/release/umbriel-dump-desktop \
+  --outputs-display "$WAYLAND_DISPLAY" > desktop.json
+```
+
+This adds `outputs.data` with monitor names/identity, enabled state, position,
+scale, transform, physical size, available/current modes and refresh rates, and
+adaptive-sync state. It runs `umbriel outputs --json` directly (no shell), using
+the explicit Wayland display and inherited `XDG_RUNTIME_DIR`. Use
+`--outputs-tool /path/to/umbriel` for a non-PATH CLI. The native IPC-only dump has
+no external-command dependency and does not query Wayland automatically.
+
+**Choose the same compositor for both sources.** `--socket` only selects IPC;
+it does not select the Wayland display. The output section records its own source
+and `same_compositor_verified: false`, because correspondence cannot be proved
+from a socket filename. Output capture has a deadline and bounded stdout/stderr;
+when requested, a missing/failing tool, invalid JSON, or timeout aborts the dump
+without partial stdout. Unknown output fields are preserved. Monitor identity
+can include serial numbers, so privacy cautions apply to these dumps too.
 
 Cargo examples are **not** built by ordinary `cargo build --release`. Use
 `cargo build --release -p umbriel-client --examples` for the client examples;
@@ -248,10 +276,10 @@ Detailed usage and ownership contracts live in the crate guides.
 The assembled implementation passed **152 tests, six doctests, formatting and
 warning-denying Clippy**. The environment overrides keep local Polars builds
 manageable; formatting names our packages to avoid traversing the sibling repo.
-The subsequent desktop-dump and inferred-shape additions passed all **53 client
-tests** (including seven binary integration tests and nine shape tests), client
-all-targets Clippy, and a read-only live release
-capture of 29 windows and eight workspaces. This verifies capture, not restoration.
+The desktop-dump, inferred-shape, and output-inspection additions passed all
+**55 client tests** (including nine binary integration tests and nine shape
+tests), client all-targets Clippy, and a read-only live release capture of 29
+windows, eight workspaces, and two monitors. This verifies capture, not restoration.
 
 ```sh
 CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \

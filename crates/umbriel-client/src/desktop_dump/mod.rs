@@ -1,9 +1,11 @@
 //! Tool/example composition, not a new library API or a restore controller.
+mod outputs;
 mod shape;
 
 use std::{
     collections::BTreeMap,
     error::Error,
+    ffi::OsString,
     io::{self, Write},
     path::PathBuf,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -30,9 +32,10 @@ type ToolResult<T> = Result<T, Box<dyn Error>>;
     name = "umbriel-dump-desktop",
     version,
     about = "Dump available Umbriel desktop state as JSON (read-only)",
-    long_about = "Dump all seven query payloads plus initial theme and overview events as JSON.\n\
-                  Captures are not atomic and are not a complete restore recipe: output modes,\n\
-                  layout trees/ratios, and application session contents are not exposed by IPC.\n\
+    long_about = "Dump all seven query payloads, initial theme/overview, and inferred layout shape.\n\
+                  Optionally include monitor configuration using --outputs-display and umbriel outputs.\n\
+                  Captures are not atomic and are not a complete restore recipe: exact layout trees,\n\
+                  ratios, and application session contents are not exposed by IPC.\n\
                   Write stdout to a file to keep the capture. Nothing is changed on the desktop."
 )]
 struct Args {
@@ -42,6 +45,18 @@ struct Args {
     /// Deadline for each connect, query, or initial event collection.
     #[arg(long, default_value_t = 10_000, value_parser = clap::value_parser!(u64).range(1..))]
     timeout_ms: u64,
+    /// Also inspect this explicit Wayland display using `umbriel outputs --json`.
+    /// This must refer to the same compositor as the IPC socket; no match is inferred.
+    #[arg(long)]
+    outputs_display: Option<OsString>,
+    /// Path to the installed Umbriel CLI for output inspection (default: umbriel).
+    #[arg(long, requires = "outputs_display")]
+    outputs_tool: Option<PathBuf>,
+}
+
+struct OutputOptions {
+    display: OsString,
+    tool: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -59,6 +74,8 @@ struct DesktopDump {
     queries: BTreeMap<&'static str, Capture>,
     events: BTreeMap<&'static str, Capture>,
     layout_shape: shape::DesktopShape,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outputs: Option<outputs::OutputCapture>,
     limitations: &'static [&'static str],
 }
 
@@ -82,7 +99,8 @@ const LIMITATIONS: &[&str] = &[
     "Separate queries and initial events are not an atomic compositor-wide snapshot; cross-family references may race.",
     "Windows are mapped toplevels only; IDs and PIDs identify this live session, not relaunchable applications.",
     "Window x/y are layout target positions; w/h are committed client content sizes, not necessarily target resize sizes.",
-    "IPC does not expose output position, mode, scale, transform, or the complete output configuration.",
+    "IPC does not expose output position/mode/scale/transform; --outputs-display can capture monitor state separately through the installed CLI's Wayland inspection.",
+    "Optional Wayland output inspection uses a separately selected display; matching that display to the IPC compositor is the caller's responsibility.",
     "IPC does not expose layout trees, column membership/order, split ratios, master settings, scroll offsets, or stacking order.",
     "layout_shape is a geometry-derived approximation, not the compositor's internal tree or a unique reconstruction.",
     "Layer surfaces have namespace/output/layer/mapped state but no geometry or exclusive-zone data.",
@@ -102,7 +120,11 @@ pub async fn run() -> ToolResult<()> {
         request_timeout: deadline,
         ..Options::default()
     };
-    let dump = capture(&endpoint, &options).await?;
+    let outputs = args.outputs_display.map(|display| OutputOptions {
+        display,
+        tool: args.outputs_tool.unwrap_or_else(|| "umbriel".into()),
+    });
+    let dump = capture(&endpoint, &options, outputs.as_ref()).await?;
     // Finish capture and serialization before publishing anything on stdout.
     let mut json = sonic_rs::to_vec_pretty(&dump)?;
     json.push(b'\n');
@@ -114,7 +136,11 @@ fn unix_ms() -> ToolResult<u128> {
     Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())
 }
 
-async fn capture(endpoint: &Endpoint, options: &Options) -> ToolResult<DesktopDump> {
+async fn capture(
+    endpoint: &Endpoint,
+    options: &Options,
+    output_options: Option<&OutputOptions>,
+) -> ToolResult<DesktopDump> {
     let started_at_unix_ms = unix_ms()?;
     let origin = Instant::now();
     let mut queries = BTreeMap::new();
@@ -158,6 +184,19 @@ async fn capture(endpoint: &Endpoint, options: &Options) -> ToolResult<DesktopDu
     let windows: Windows = sonic_rs::from_value(payload("windows"))?;
     let workspaces: Workspaces = sonic_rs::from_value(payload("workspaces"))?;
     let layout_shape = shape::derive(&windows, &workspaces);
+    let outputs = match output_options {
+        Some(output_options) => Some(
+            outputs::capture(
+                &output_options.tool,
+                &output_options.display,
+                options.request_timeout,
+                options.frame_limit,
+                origin,
+            )
+            .await?,
+        ),
+        None => None,
+    };
     Ok(DesktopDump {
         format: "umbriel-desktop-dump",
         schema_version: 1,
@@ -171,6 +210,7 @@ async fn capture(endpoint: &Endpoint, options: &Options) -> ToolResult<DesktopDu
         queries,
         events,
         layout_shape,
+        outputs,
         limitations: LIMITATIONS,
     })
 }
