@@ -10,3 +10,20 @@ memchr = "2.8.3"
 serde = { version = "1.0.229", features = ["derive"] }
 sonic-rs = "0.5.10"
 thiserror = "2.0.21"
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+# Timing benches are Criterion-driven. `allocations` is a plain binary with a
+# counting global allocator so counting overhead never pollutes timed loops.
+[[bench]]
+name = "framing"
+harness = false
+
+[[bench]]
+name = "decode"
+harness = false
+
+[[bench]]
+name = "allocations"
+harness = false
