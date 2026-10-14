@@ -200,6 +200,33 @@ pub struct Session {
     terminal: Option<Terminal>,
 }
 
+/// Validated ordinary command, encoded once before entering an adapter queue.
+/// No raw-byte constructor exists; the protocol's LF-inclusive bound applies.
+#[derive(Debug)]
+pub struct PreparedCommand(Vec<u8>);
+
+impl PreparedCommand {
+    pub fn new(request: Request<'_>) -> Result<Self, Error> {
+        if matches!(
+            request,
+            Request::Subscribe(_)
+                | Request::Raw {
+                    cmd: "subscribe",
+                    ..
+                }
+        ) {
+            return Err(Error::UnsupportedSubscribe);
+        }
+        let mut bytes = Vec::new();
+        request.encode(&mut bytes)?;
+        Ok(Self(bytes))
+    }
+
+    pub fn encoded_len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 impl Session {
     /// The inbound frame limit excludes LF and is independent of request bounds.
     pub fn one_shot(frame_limit: usize) -> Self {
@@ -258,6 +285,11 @@ impl Session {
     /// Admission succeeds only after the previous reply has actually drained.
     /// Raw `subscribe` is rejected too; it cannot bypass the fixed-set contract.
     pub fn admit(&mut self, request: Request<'_>) -> Result<LocalRequestId, Error> {
+        self.admit_prepared(PreparedCommand::new(request)?)
+    }
+
+    /// Transfer already checked storage without encoding again or bypassing validation.
+    pub fn admit_prepared(&mut self, command: PreparedCommand) -> Result<LocalRequestId, Error> {
         self.ensure_live()?;
         if self.slot.is_some() {
             return Err(Error::Busy);
@@ -265,20 +297,10 @@ impl Session {
         if !matches!(self.phase, Phase::Fresh | Phase::Streaming) {
             return Err(Error::NotReady);
         }
-        if matches!(
-            request,
-            Request::Subscribe(_)
-                | Request::Raw {
-                    cmd: "subscribe",
-                    ..
-                }
-        ) {
-            return Err(Error::UnsupportedSubscribe);
-        }
         self.last_request_id
             .checked_add(1)
             .ok_or(Error::LocalRequestIdsExhausted)?;
-        request.encode(&mut self.outbound)?;
+        self.outbound = command.0;
         self.install_slot()
     }
 

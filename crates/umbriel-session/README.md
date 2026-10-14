@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#medium
 sources:
+  - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
+    title: Add validated prepared admission for bounded runtime ingress without another reply ledger
   - resource: opencode://ses_ec7a6b0aeffeO1NsW5IPjs6snU
     title: Implemented the bounded session ledger and deterministic ownership transcripts
   - resource: ../../design/protocol/review0.gpt6a.md
@@ -117,6 +119,13 @@ later caller. It cannot detect a server duplicating an already-drained reply
 after the next request has been fully sent: without wire IDs, that envelope is
 indistinguishable from the new request's reply. Extra replies while no slot is
 occupied are detected and terminate the connection.
+
+`PreparedCommand::new(Request)` checks and encodes an ordinary command once,
+before a runtime adapter queues it. `Session::admit_prepared` transfers that
+bounded storage into the existing slot. There is no raw-byte constructor and
+subscribe remains forbidden. This small admission extension leaves the original
+ledger, write accounting, and deterministic transcripts intact; the predecessor
+was already checkpointed before this extension.
 
 The adapter must retain this core independently of disposable waiting futures,
 continuously drain subscribed input, and close its socket when terminal appears.

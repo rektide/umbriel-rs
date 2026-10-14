@@ -1,0 +1,18 @@
+[package]
+name = "umbriel-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tokio Unix client and independently bounded Umbriel subscriptions"
+
+[dependencies]
+umbriel-protocol = { path = "../umbriel-protocol" }
+umbriel-session = { path = "../umbriel-session" }
+tokio = { version = "1.48", features = ["net", "rt", "sync", "time", "macros"] }
+serde = "1"
+sonic-rs = "0.5"
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1.48", features = ["io-util", "test-util", "rt-multi-thread"] }
+tempfile = "3"
