@@ -5,11 +5,11 @@ description: Revised library-wide design selecting Sonic and separating wire fra
 resource: design/architecture/architecture1.gpt6a.md
 status: draft
 generated:
-  at: 2026-10-13
+  at: 2026-10-14
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
-    title: Human-selected Sonic and multi-crate direction, protocol review, and integration of the tmux/Kubeless assessment
+    title: Human-selected Sonic and Polars-native direction, protocol and reuse reviews, and implementation integration
   - resource: architecture0.gpt6a.md
     title: Predecessor sans-I/O boundaries and the focused active-window example
   - resource: ../performance/json0.gpt6a.md
@@ -349,21 +349,30 @@ subscriber, not compulsory storage through which every message passes.
 The columnar representation is **decided: Polars-native** (user acceptance,
 2026-10-13). `umbriel-arrow` emits `polars_arrow::RecordBatch` — and depends
 only on the standalone `polars-arrow` crate, not the query engine — while
-`umbriel-polars` adds the facade, whose `From<RecordBatch> for DataFrame`
-conversion is zero-copy by construction. Evidence and the full comparison live
-in [the columnar assessment](../columnar/arrow-polars0.glm53m.md), which
-probe-verified the runtime overhead of polars-arrow versus apache arrow-array
-to be zero for this emitter shape. Governing rules from that decision:
+`umbriel-polars` adds the facade. For our schema-matched primitive and Utf8View
+columns, `From<RecordBatch> for DataFrame` can retain the existing data buffers.
+Evidence and the historical comparison live in
+[the columnar assessment](../columnar/arrow-polars0.glm53m.md). Its pointer and
+value probes establish particular buffer-sharing/conversion properties; they
+**do not measure equal runtime performance or zero runtime overhead**. We select
+Polars-native representation for the direct data path and simpler maintenance.
+The user's 2026-10-14 direction reaffirms it. Governing rules:
 
 - **Utf8View for every string column, always.** Polars' DataFrame conversion
   moves view strings untouched but fully copies `Utf8`/`LargeUtf8` columns.
 - **No C Data Interface bridge.** The user prefers no FFI bridging; if an
   Apache-arrow consumer ever appears, Arrow **IPC serialization** (pure safe
   Rust on both sides) is the sanctioned interop path, accepting its copy cost.
-- **Same-minor lockstep**: `polars-arrow` and the `polars` facade must pin the
-  same minor so the zero-copy `From` impl sees one crate instance.
-- Switching to an apache arrow-array native emitter later costs zero copied
-  data (probe-proven), so this decision is cheap to revisit with evidence.
+- **One resolved Polars type universe**: use matching pinned versions of
+  `polars-arrow` and the `polars` facade and verify dependency unification.
+  The implementation starts from the already-probed published **0.55.2**.
+- **Schema/array agreement**: validate types as well as field count and height
+  when constructing our batch envelope. Polars's `RecordBatch::try_new` checks
+  counts and lengths, while `DataFrame::from` assumes matching types. Keep raw
+  arbitrary-batch import distinct from the schema-bound emitter path.
+- **Query results preserve source provenance** without pretending a filtered
+  or aggregated result is the compositor's complete original family. Empty
+  source replacements and empty query results both need their own envelope.
 
 Polars's `collect_batches` returns a **blocking iterator of DataFrames**, even
 though the API is behind an `async` feature. A dedicated query execution
