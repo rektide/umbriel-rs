@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ec7a20df7ffeMkxNbf2TS1zhbi
-    title: Implemented finite query composition, provenance-preserving derived output and synthetic/stdin example
+    title: Implemented finite queries and synthetic, array and subscription-wire examples with local provenance
   - resource: ../../design/architecture/architecture1.gpt6a.md
     title: Polars-native version, dtype and execution boundaries
   - resource: ../umbriel-arrow/README.md
@@ -24,7 +24,7 @@ use umbriel_polars::SnapshotFrame;
 
 let snapshot = umbriel_arrow::windows(&rows, local_provenance)?;
 let output = SnapshotFrame::from(snapshot).lazy()
-    .map(|plan| plan.filter(col("focused")).select([col("id"), col("title")]))
+    .map(|plan| plan.filter(col("active")).select([col("id"), col("title")]))
     .collect()?;
 let (source_metadata, native_batches) = output.into_parts();
 ```
@@ -68,6 +68,32 @@ printf '[]\n' | cargo run -p umbriel-polars --example snapshot_query -- windows 
 The example decodes Sonic through protocol models, emits owned columns, filters
 and projects lazily, then prints the returned native batches. Epoch/position
 are synthetic local coordinates, not server transactions or resume tokens.
+Windows select the seat-global `active` window, not workspace-local remembered
+`focused` windows. Workspaces select `active` workspaces across output groups.
+
+For actual subscription envelopes, use `--wire` instead of `--stdin`:
+
+```sh
+umbriel subscribe windows | cargo run -p umbriel-polars --example snapshot_query -- windows --wire
+umbriel subscribe workspaces | cargo run -p umbriel-polars --example snapshot_query -- workspaces --wire
+```
+
+Wire mode is a subscription-event consumer, not a command/reply driver. It
+validates each envelope, decodes only the selected family's payload using the
+protocol event models, and skips unrelated/unknown events. Bare blank initial
+frames and uncorrelated `ok` lines are skipped with diagnostics, never treated
+as command success. Remote `err` lines, malformed envelopes and malformed
+selected payloads terminate with explicit errors. Unrelated payloads receive
+JSON/envelope validation, not family-specific model validation.
+
+Provenance retains zero-based physical stdin line positions, including skipped
+lines; it is not renumbered by selected event count. This example supplies local
+epoch 0 and neither manages connections nor establishes subscription readiness.
+The checked mixed fixture contains only synthetic data:
+
+```sh
+cargo run -p umbriel-polars --example snapshot_query -- windows --wire < crates/umbriel-polars/examples/data/mixed-wire.ndjson
+```
 
 Targeted checks (environment overrides keep local build memory manageable):
 

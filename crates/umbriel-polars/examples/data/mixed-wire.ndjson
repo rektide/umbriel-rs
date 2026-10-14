@@ -1,0 +1,6 @@
+
+{"data":{"open":false},"event":"overview"}
+{"data":[{"active":true,"app_id":"org.synthetic.Pad","content_type":"none","floating":true,"focused":false,"h":400,"id":"synthetic-active","pid":-1,"scratchpad":"synthetic-pad","title":"Synthetic seat-active","urgent":false,"w":600,"workspace":"","x":-20,"xdg_tag":"","xwayland":true,"y":24}],"event":"windows"}
+{"event":"windows","data":[]}
+{"ok":null}
+{"event":"workspaces","data":[]}
