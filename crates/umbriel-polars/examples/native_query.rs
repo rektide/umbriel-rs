@@ -2,12 +2,15 @@
 //! `umbriel-client` directly, subscribe to one family, and run one finite lazy
 //! query per selected snapshot. The source owner (`Subscription`) is retained
 //! for the whole run; the bounded observer is consumed independently. Blocking
-//! Polars collection runs on a blocking worker, never on the socket driver.
+//! Polars collection runs on a blocking worker, never on the socket driver,
+//! and only one query worker is active at a time.
 //!
-//! Gaps and observer terminal loss end the run with explicit errors; this
-//! example uses `Reconnect::Never` defaults, so a transport loss is a visible
-//! gap, not a hidden retry. A finite selected-snapshot count (`--count`,
-//! default one) bounds the work; there is no task-per-event pipeline.
+//! Each query result is handed to a caller sink and dropped; the loop retains
+//! no output history. Gaps and observer terminal loss end the run with
+//! explicit errors; this example uses `Reconnect::Never` defaults, so a
+//! transport loss is a visible gap, not a hidden retry. A finite
+//! selected-snapshot count (`--count`, default one) bounds the work; there is
+//! no task-per-event pipeline.
 //!
 //! Windows queries filter on seat-global `active`, not workspace-local
 //! remembered `focused`; workspaces select the active workspace of each output
@@ -119,7 +122,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let (source, mut observer) = endpoint
         .subscribe(&[args.family.wire()], SubscriptionOptions::default())
         .await?;
-    let result = collect_snapshots(args.family, args.count, &mut observer).await;
+    let result = consume_snapshots(args.family, args.count, &mut observer, |output| {
+        // Bounded streaming consumption: print the native result, then let it
+        // drop; no output history is retained.
+        print_result(&output);
+    })
+    .await;
     // The observer alone does not keep the source alive; shutdown covers both
     // success and error paths and waits for actual socket/task cleanup.
     source.shutdown().await;
@@ -128,15 +136,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 /// Consume the bounded observer until `count` selected snapshots have been
-/// queried. Every frame is reported; gaps and terminal delivery loss end the
-/// run with explicit errors instead of silent skips or retries.
-async fn collect_snapshots(
+/// queried, streaming each result to `on_result` instead of retaining it. The
+/// loop awaits each blocking query before receiving the next observation, so
+/// at most one query worker is ever active. Every frame is reported; gaps and
+/// terminal delivery loss end the run with explicit errors instead of silent
+/// skips or retries.
+async fn consume_snapshots(
     family: SelectedFamily,
     count: u64,
     observer: &mut Observer,
-) -> Result<Vec<QueryResult<LocalProvenance>>, Box<dyn Error + Send + Sync>> {
-    let mut outputs = Vec::new();
-    while outputs.len() < count as usize {
+    mut on_result: impl FnMut(QueryResult<LocalProvenance>),
+) -> Result<u64, Box<dyn Error + Send + Sync>> {
+    let mut processed: u64 = 0;
+    while processed < count {
         let observation = observer.recv().await.map_err(delivery_loss)?;
         let Observation::Frame {
             epoch,
@@ -154,15 +166,17 @@ async fn collect_snapshots(
         };
         match select_snapshot(family, epoch, position, &bytes) {
             Ok(Some(event)) => {
+                // Awaiting this blocking worker before the next receive keeps
+                // exactly one query worker active at a time.
                 let output = query_off_thread(event, LocalProvenance { epoch, position }).await?;
-                print_result(&output);
-                outputs.push(output);
+                on_result(output);
+                processed += 1;
             }
             Ok(None) => {}
             Err(error) => return Err(error),
         }
     }
-    Ok(outputs)
+    Ok(processed)
 }
 
 /// Epoch announcements and gaps are printed as continuity evidence. A gap
@@ -310,10 +324,10 @@ async fn query_off_thread(
 fn print_result(output: &QueryResult<LocalProvenance>) {
     let source = output.source();
     println!(
-        "derived {:?} result (schema v{}, complete replacement; {:?}) from local epoch {}, receive position {}",
+        "derived {:?} output (kind {:?}; its input was a complete family replacement snapshot, schema v{}) from local epoch {}, receive position {}",
         source.family,
-        source.schema_version,
         output.kind(),
+        source.schema_version,
         source.provenance.epoch,
         source.provenance.position
     );
@@ -532,17 +546,23 @@ mod tests {
             .unwrap();
         // count=2: the run stops after two selected snapshots without draining
         // the source dry; the unrelated submap frame is skipped, not queried.
-        let outputs = collect_snapshots(SelectedFamily::Windows, 2, &mut observer)
-            .await
-            .unwrap();
+        // The sink deliberately collects through the streaming seam for the
+        // assertions below; main prints and drops instead.
+        let mut collected: Vec<QueryResult<LocalProvenance>> = Vec::new();
+        let processed = consume_snapshots(SelectedFamily::Windows, 2, &mut observer, |output| {
+            collected.push(output);
+        })
+        .await
+        .unwrap();
         source.shutdown().await;
-        assert_eq!(outputs.len(), 2);
+        assert_eq!(processed, 2);
+        assert_eq!(collected.len(), 2);
         assert!(
-            outputs
+            collected
                 .iter()
                 .all(|output| output.source().provenance.epoch == 1)
         );
-        let positions: Vec<u64> = outputs
+        let positions: Vec<u64> = collected
             .iter()
             .map(|output| output.source().provenance.position)
             .collect();
@@ -550,8 +570,8 @@ mod tests {
             positions[0] < positions[1],
             "positions must increase: {positions:?}"
         );
-        assert_eq!(string_column(&outputs[0], 0), ["w1"]);
-        assert_eq!(string_column(&outputs[1], 0), ["w2"]);
+        assert_eq!(string_column(&collected[0], 0), ["w1"]);
+        assert_eq!(string_column(&collected[1], 0), ["w2"]);
     }
 
     #[tokio::test]
@@ -564,11 +584,13 @@ mod tests {
             .unwrap();
         // Two snapshots requested, one delivered, then the peer closes: the gap
         // must surface as an error, never as a quiet early return.
-        let error = collect_snapshots(SelectedFamily::Windows, 2, &mut observer)
+        let mut seen = 0u64;
+        let error = consume_snapshots(SelectedFamily::Windows, 2, &mut observer, |_| seen += 1)
             .await
             .unwrap_err()
             .to_string();
         source.shutdown().await;
+        assert_eq!(seen, 1, "the pre-gap snapshot was streamed to the sink");
         assert!(error.contains("source gap"), "{error}");
     }
 }

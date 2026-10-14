@@ -18,6 +18,7 @@ umbriel-state = { path = "../umbriel-state" }
 tokio = { version = "1.48", features = ["io-util", "test-util", "rt-multi-thread"] }
 tempfile = "3"
 socket2 = "0.6"
+shlex = "2.0.1"
 
 [[example]]
 name = "active_window"

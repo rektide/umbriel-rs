@@ -9,6 +9,12 @@
 //! socket; the tests below use scripted Unix peers and never touch a live
 //! compositor.
 //!
+//! Typed command words are tokenized with POSIX shell quoting (`shlex`), so
+//! workspace names and outputs may contain spaces or non-ASCII text:
+//! `workspace-switch --name "my space" --output 'DP 1'`. The `raw` escape
+//! hatch deliberately keeps the remainder of its line verbatim, because
+//! quoting there belongs to the compositor action grammar, not this REPL.
+//!
 //! Pass an explicit socket path argument to reach a scripted peer; without one,
 //! discovery follows `UMBRIEL_SOCKET` / `XDG_RUNTIME_DIR` + `WAYLAND_DISPLAY`.
 use std::{
@@ -17,6 +23,8 @@ use std::{
     io::{self, BufRead, Write},
     path::PathBuf,
 };
+
+use shlex::Shlex;
 
 use umbriel_client::{Discovery, Endpoint, Error as WireError, Options, RawReply};
 use umbriel_protocol::{
@@ -76,7 +84,9 @@ impl fmt::Display for UsageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown(word) => write!(f, "unknown command {word:?}; try 'help'"),
-            Self::UnexpectedArgument(rest) => write!(f, "unexpected argument {rest:?}"),
+            Self::UnexpectedArgument(argument) => {
+                write!(f, "unexpected argument {argument:?}")
+            }
             Self::UnknownFlag(flag) => write!(f, "unknown flag {flag:?}"),
             Self::MissingFlagValue(flag) => write!(f, "flag {flag} requires a value"),
             Self::InvalidFlagValue { flag, value } => {
@@ -96,89 +106,97 @@ impl fmt::Display for UsageError {
     }
 }
 
-/// Parse one REPL line. `Ok(None)` is an empty line, not an error.
+/// Parse one REPL line. `Ok(None)` is an empty line, not an error. Typed
+/// command words use POSIX shell quoting; only `raw` reads its remainder
+/// verbatim from the original line.
 fn parse_line(line: &str) -> Result<Option<Command>, UsageError> {
-    let line = line.trim();
-    if line.is_empty() {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
         return Ok(None);
     }
-    let (head, rest) = match line.split_once(char::is_whitespace) {
-        Some((head, rest)) => (head, rest.trim()),
-        None => (line, ""),
+    let mut words = Shlex::new(trimmed);
+    let Some(head) = words.next() else {
+        return Ok(None);
     };
-    let command = match head {
+    let command = match head.as_str() {
         "help" => {
-            reject_arguments(rest)?;
+            reject_arguments(&mut words)?;
             Command::Help
         }
         "quit" | "exit" => {
-            reject_arguments(rest)?;
+            reject_arguments(&mut words)?;
             Command::Quit
         }
         "overview-toggle" => {
-            reject_arguments(rest)?;
+            reject_arguments(&mut words)?;
             Command::Wire(WireCommand::OverviewToggle)
         }
         "raw" => {
+            // The raw action text is the remainder of the line verbatim, with
+            // quoting left to the compositor action grammar.
+            let rest = trimmed
+                .split_once(char::is_whitespace)
+                .map_or("", |(_, rest)| rest)
+                .trim_start();
             if rest.is_empty() {
                 return Err(UsageError::EmptyRawAction);
             }
             Command::Wire(WireCommand::Raw(rest.to_owned()))
         }
-        "workspace-switch" => Command::Wire(parse_workspace_switch(rest)?),
+        "workspace-switch" => Command::Wire(parse_workspace_switch(&mut words)?),
         name => {
             let Some(query) = Query::ALL.iter().copied().find(|q| q.as_str() == name) else {
                 return Err(UsageError::Unknown(name.to_owned()));
             };
-            reject_arguments(rest)?;
+            reject_arguments(&mut words)?;
             Command::Wire(WireCommand::Query(query))
         }
     };
     Ok(Some(command))
 }
 
-fn reject_arguments(rest: &str) -> Result<(), UsageError> {
-    if rest.is_empty() {
-        Ok(())
-    } else {
-        Err(UsageError::UnexpectedArgument(rest.to_owned()))
+fn reject_arguments(words: &mut Shlex<'_>) -> Result<(), UsageError> {
+    match words.next() {
+        None => Ok(()),
+        Some(argument) => Err(UsageError::UnexpectedArgument(argument)),
     }
 }
 
-fn parse_workspace_switch(rest: &str) -> Result<WireCommand, UsageError> {
+fn parse_workspace_switch(words: &mut Shlex<'_>) -> Result<WireCommand, UsageError> {
     let mut index: Option<usize> = None;
     let mut name: Option<String> = None;
     let mut output: Option<String> = None;
-    let mut words = rest.split_whitespace();
     while let Some(flag) = words.next() {
-        match flag {
+        match flag.as_str() {
             "--index" => {
-                let value = words
-                    .next()
-                    .ok_or(UsageError::MissingFlagValue("--index"))?;
+                let Some(value) = words.next() else {
+                    return Err(UsageError::MissingFlagValue("--index"));
+                };
                 if index.is_some() || name.is_some() {
                     return Err(UsageError::ConflictingSelectors);
                 }
                 index = Some(value.parse().map_err(|_| UsageError::InvalidFlagValue {
                     flag: "--index",
-                    value: value.to_owned(),
+                    value,
                 })?);
             }
             "--name" => {
-                let value = words.next().ok_or(UsageError::MissingFlagValue("--name"))?;
+                let Some(value) = words.next() else {
+                    return Err(UsageError::MissingFlagValue("--name"));
+                };
                 if index.is_some() || name.is_some() {
                     return Err(UsageError::ConflictingSelectors);
                 }
-                name = Some(value.to_owned());
+                name = Some(value);
             }
             "--output" => {
-                let value = words
-                    .next()
-                    .ok_or(UsageError::MissingFlagValue("--output"))?;
+                let Some(value) = words.next() else {
+                    return Err(UsageError::MissingFlagValue("--output"));
+                };
                 if output.is_some() {
                     return Err(UsageError::DuplicateFlag("--output"));
                 }
-                output = Some(value.to_owned());
+                output = Some(value);
             }
             other => return Err(UsageError::UnknownFlag(other.to_owned())),
         }
@@ -531,10 +549,19 @@ fn marked(primary: &str, primary_on: bool, rest: &[(&str, bool)]) -> String {
 }
 
 fn print_help() {
+    println!(
+        "grammar: typed command words use POSIX shell quoting ('single', \"double\", backslash);"
+    );
+    println!("         raw takes the remainder of its line verbatim");
     println!("queries: windows, workspaces, submap, layers, color, tearing, keyboard-layouts");
     println!("actions: overview-toggle");
     println!("         workspace-switch (--index N | --name NAME) [--output NAME]");
-    println!("escape:  raw <action text>   (bypasses local action validation)");
+    println!(
+        "         NAME may contain spaces or non-ASCII text: --name \"my space\" --output 'DP 1'"
+    );
+    println!(
+        "escape:  raw <action text>   (verbatim rest of line; bypasses local action validation)"
+    );
     println!("other:   help, quit");
 }
 
@@ -736,6 +763,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn quoted_words_express_spaced_and_non_ascii_names() {
+        assert_eq!(
+            wire(r#"workspace-switch --name "my space" --output 'DP 1'"#),
+            WireCommand::WorkspaceSwitch {
+                selection: Selection::Name("my space".to_owned()),
+                output: Some("DP 1".to_owned())
+            }
+        );
+        assert_eq!(
+            wire(r"workspace-switch --name my\ space"),
+            WireCommand::WorkspaceSwitch {
+                selection: Selection::Name("my space".to_owned()),
+                output: None
+            }
+        );
+        assert_eq!(
+            wire(r#"workspace-switch --name 'веб'"#),
+            WireCommand::WorkspaceSwitch {
+                selection: Selection::Name("веб".to_owned()),
+                output: None
+            }
+        );
+        // Quoting belongs to this REPL; tokens reach the typed builder unquoted.
+        assert_eq!(parse_line(r#""help""#).unwrap(), Some(Command::Help));
+    }
+
     #[tokio::test]
     async fn typed_queries_decode_native_data_and_preserve_remote_and_local_errors() {
         let report = scripted_line(
@@ -829,6 +883,21 @@ mod tests {
                 "workspace-switch:2/DP-1",
             ),
             (
+                r#"workspace-switch --name "my space""#,
+                r#"{"cmd":"msg","arg":"workspace-switch:my space"}"#,
+                "workspace-switch:my space",
+            ),
+            (
+                r#"workspace-switch --index 1 --output "DP 1""#,
+                r#"{"cmd":"msg","arg":"workspace-switch:1/DP 1"}"#,
+                "workspace-switch:1/DP 1",
+            ),
+            (
+                "workspace-switch --name веб",
+                "{\"cmd\":\"msg\",\"arg\":\"workspace-switch:веб\"}",
+                "workspace-switch:веб",
+            ),
+            (
                 "overview-toggle",
                 r#"{"cmd":"msg","arg":"overview-toggle"}"#,
                 "overview-toggle",
@@ -875,7 +944,9 @@ mod tests {
         for line in [
             "workspace-switch --index 0",
             "workspace-switch --index 65",
-            "workspace-switch --name \"quoted\"",
+            // Single quotes keep the double quotes literal in the token, so the
+            // typed builder rejects the unrepresentable leading quote.
+            r#"workspace-switch --name '"quoted"'"#,
             "workspace-switch --name a/b",
             "workspace-switch --index 1 --output bad/output",
         ] {
