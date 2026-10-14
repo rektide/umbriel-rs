@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#medium
 sources:
   - resource: opencode://ses_ec75b4878ffekQ95N9mUgpOTl7
-    title: Implement family replacement and health, coherent joins, stable-active reducer, and the native timer example
+    title: Implement family replacement and health, coherent joins, stable-active reducer and native timer example; preserve capture membership/order and skip unchanged workspace copies
   - resource: ../../design/assessment/reuse0.gpt6a.md
     title: Family-scoped replacement, duplicate rejection, source evidence, and Kubeless reuse boundary
   - resource: ../../design/architecture/architecture1.gpt6a.md
@@ -93,7 +93,7 @@ let mut inventory = Inventory::new(1);
 let stamp = Stamp { epoch: 1, position: 1, observed_at: Duration::ZERO };
 inventory.install(stamp, Event::Windows(vec![])).unwrap();
 let captured = inventory.snapshot();
-assert!(captured.windows.entries.is_empty());
+assert!(captured.windows.entries().is_empty());
 assert!(captured.windows.status.is_ready());
 assert!(!inventory.status(Family::Workspaces).is_ready());
 assert_eq!(captured.join_windows().windows_status.stamp, Some(stamp));
@@ -103,16 +103,21 @@ assert_eq!(captured.join_windows().windows_status.stamp, Some(stamp));
 It joins the latest separately observed families, never claiming atomic compositor
 state. `WorkspaceMatch` explicitly distinguishes matched, unmatched, scratchpad,
 and other empty workspace references; it retains every window. Snapshot
-`entries` iterate in lexical key order, **not compositor order**. `source_order`
+`entries()` iterate in lexical key order, **not compositor order**. `source_order()`
 preserves the installed source array order, and joins follow windows source order.
+Membership and source order are private with read-only accessors, preserving the
+association consumed by the join. Captures cannot be manually fabricated or have
+their membership/order edited independently. Callers can clone shared row handles
+from `entries()` for their own output; stamps/status remain ordinary public data.
 
 ## Stable active identity
 
 `StableActiveReducer` is deterministic and clock-injected with monotonic
 `Duration` values. The default dwell is **750 ms**. `observe(epoch, now, windows)`
 selects `active`, never `focused`; only ID, title, app ID, workspace, and scratchpad
-metadata survive the frame. Same-ID updates reuse string storage where possible
-without resetting the deadline. `poll(now)` emits once per qualifying episode,
+metadata survive the frame. Same-ID updates skip unchanged workspace-ID copies
+and reuse string storage where possible without resetting the deadline.
+`poll(now)` emits once per qualifying episode,
 even if no more input arrives. A later A episode after A–B–A may emit A again.
 
 No-active data immediately cancels a pending window and begins a valid None

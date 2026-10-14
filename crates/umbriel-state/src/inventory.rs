@@ -57,12 +57,37 @@ impl Status {
 }
 
 /// Owned coherent capture. Key iteration is lexical, NOT compositor row order.
+/// Membership and source order are read-only so their association cannot be
+/// broken by callers. Captures are constructed by [`Inventory::snapshot`].
+///
+/// ```compile_fail
+/// use std::collections::BTreeMap;
+/// use umbriel_state::inventory::{FamilySnapshot, Status};
+/// let fabricated = FamilySnapshot::<(), ()> {
+///     status: Status::default(),
+///     entries: BTreeMap::new(),
+///     source_order: vec![()],
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct FamilySnapshot<K, V> {
     pub status: Status,
-    pub entries: BTreeMap<K, Arc<V>>,
-    /// Exact row order of the last installed source array; singleton families use `()`.
-    pub source_order: Vec<K>,
+    entries: BTreeMap<K, Arc<V>>,
+    source_order: Vec<K>,
+}
+
+impl<K, V> FamilySnapshot<K, V> {
+    /// Captured keyed membership, iterating in lexical key order. Shared handles
+    /// can be cloned for caller-owned output without changing this capture.
+    pub fn entries(&self) -> &BTreeMap<K, Arc<V>> {
+        &self.entries
+    }
+
+    /// Exact row order of the installed source array; singleton families use `()`.
+    /// Every key names an entry in [`Self::entries`].
+    pub fn source_order(&self) -> &[K] {
+        &self.source_order
+    }
 }
 
 struct Relation<K, V> {

@@ -26,7 +26,11 @@ impl ActiveWindow {
     fn refresh(&mut self, window: &Window) {
         self.title.clone_from(&window.title);
         self.app_id.clone_from(&window.app_id);
-        self.workspace.clone_from(&window.workspace);
+        // The opaque ID wrapper derives Clone; its clone_from does not promise
+        // reuse of the inner String allocation. Leave unchanged IDs untouched.
+        if self.workspace != window.workspace {
+            self.workspace.clone_from(&window.workspace);
+        }
         self.scratchpad.clone_from(&window.scratchpad);
     }
 }

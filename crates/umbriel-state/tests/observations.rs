@@ -61,11 +61,14 @@ fn title_churn_and_timer_only_progress_emit_latest_once() {
     a.title = "second".into();
     r.observe(1, ms(100), &[a.clone()]).unwrap();
     a.title = "latest".into();
+    a.workspace = "new-workspace".into();
     r.observe(1, ms(600), &[a]).unwrap();
     assert_eq!(r.deadline(), Some(ms(750)));
     assert!(r.poll(ms(749)).unwrap().is_none());
     let out = r.poll(ms(750)).unwrap().unwrap();
-    assert_eq!(out.window.unwrap().title, "latest");
+    let latest = out.window.unwrap();
+    assert_eq!(latest.title, "latest");
+    assert_eq!(latest.workspace.as_str(), "new-workspace");
     assert_eq!(out.since, ms(0));
     r.observe(1, ms(1000), &[window("A")]).unwrap();
     assert_eq!(
@@ -147,7 +150,7 @@ fn replacement_validation_empty_and_stale_are_coherent() {
         .unwrap();
     let prior = inventory.snapshot();
     assert_eq!(
-        prior.windows.source_order,
+        prior.windows.source_order(),
         vec![WindowId::from("B"), WindowId::from("A")]
     );
     assert_eq!(
@@ -155,7 +158,7 @@ fn replacement_validation_empty_and_stale_are_coherent() {
         Err(Error::DuplicateId)
     );
     let rejected = inventory.snapshot();
-    assert_eq!(rejected.windows.entries.len(), 2);
+    assert_eq!(rejected.windows.entries().len(), 2);
     assert_eq!(rejected.windows.status.stamp, Some(stamp(1, 1)));
     assert_eq!(rejected.windows.status.last_attempt, Some(stamp(1, 2)));
     assert_eq!(
@@ -169,15 +172,15 @@ fn replacement_validation_empty_and_stale_are_coherent() {
         ),
         Err(Error::EmptyId)
     );
-    assert_eq!(inventory.snapshot().windows.entries.len(), 2);
+    assert_eq!(inventory.snapshot().windows.entries().len(), 2);
     inventory
         .install(stamp(1, 4), Event::Windows(vec![]))
         .unwrap();
     let empty = inventory.snapshot();
-    assert!(empty.windows.entries.is_empty());
+    assert!(empty.windows.entries().is_empty());
     assert!(empty.windows.status.is_ready());
     assert_eq!(empty.windows.status.stamp, Some(stamp(1, 4)));
-    assert_eq!(prior.windows.entries.len(), 2); // retained captures remain unchanged
+    assert_eq!(prior.windows.entries().len(), 2); // retained captures remain unchanged
     inventory.gap();
     assert!(!inventory.snapshot().connected);
     assert_eq!(
@@ -193,7 +196,7 @@ fn replacement_validation_empty_and_stale_are_coherent() {
         .install(stamp(2, 1), Event::Windows(vec![window("new")]))
         .unwrap();
     assert!(inventory.status(Family::Windows).is_ready());
-    assert_eq!(inventory.snapshot().windows.entries.len(), 1);
+    assert_eq!(inventory.snapshot().windows.entries().len(), 1);
 }
 
 #[test]
@@ -259,7 +262,7 @@ fn join_carries_both_family_stamps_and_every_unmatched_row() {
     ));
     inventory.begin_epoch(2).unwrap();
     let stale = inventory.snapshot();
-    assert_eq!(stale.windows.entries.len(), 4);
+    assert_eq!(stale.windows.entries().len(), 4);
     assert!(!stale.windows.status.is_ready());
     inventory
         .install(stamp(2, 1), Event::Workspaces(vec![workspace("ws")]))
@@ -278,7 +281,7 @@ fn join_carries_both_family_stamps_and_every_unmatched_row() {
 fn singleton_null_and_local_ordering_are_explicit() {
     let mut inventory = Inventory::new(1);
     inventory.install(stamp(1, 1), Event::Submap(None)).unwrap();
-    assert!(inventory.snapshot().submap.entries[&()].is_none());
+    assert!(inventory.snapshot().submap.entries()[&()].is_none());
     assert!(inventory.status(Family::Submap).is_ready());
     assert!(!inventory.status(Family::KeyboardLayout).is_ready());
     assert_eq!(
@@ -304,5 +307,5 @@ fn singleton_null_and_local_ordering_are_explicit() {
         inventory.status(Family::Submap).health,
         Health::Stale(StaleReason::InvalidSnapshot)
     );
-    assert!(inventory.snapshot().submap.entries[&()].is_none());
+    assert!(inventory.snapshot().submap.entries()[&()].is_none());
 }
