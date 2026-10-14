@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#high
 sources:
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
-    title: Add and verify a desktop-dump binary/example over one-shot queries and initial events, preserving raw fields and stating restore limitations
+    title: Add and verify desktop capture and geometry-derived layout shape; preserve raw fields and distinguish reported facts from inferred structure without compositor changes
   - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
     title: Implement and correct Unix discovery, request evidence, and bounded subscription ownership; remove source-obvious warm-path work
   - resource: ../umbriel-session/README.md
@@ -27,7 +27,7 @@ sources:
   - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/server/ipc.cpp
     title: Checked theme and overview payloads available through initial subscription events
 verification:
-  method: Scripted Unix peer tests and paused Tokio time; all 44 client tests, two doctests, formatting, and all-targets Clippy; release desktop-dump build and read-only live capture of 29 windows and eight workspaces.
+  method: Scripted Unix peer tests and paused Tokio time; all 53 client tests, two doctests, formatting, and all-targets Clippy; release desktop-dump build and read-only live capture of 29 windows and eight workspaces.
   limits: No live compositor mutation, production deployment, throughput benchmark, state store, or columnar execution.
 ---
 
@@ -86,6 +86,18 @@ with a `no keyboard` rejection is instead `status: "unavailable"` plus `reason`.
 Other failures abort without partial stdout. Serialization finishes before the
 JSON is written. `protocol_model_revision` names the library model baseline,
 **not** a discovered running-compositor version.
+
+`layout_shape` adds a **derived spatial hierarchy**, not compositor topology.
+Each workspace retains its reported mode/output and divides tiled rectangles
+along separating X/Y lines into `side_by_side` or `stacked` regions. When both
+axes work, X wins: the shape is deterministic but not necessarily the compositor's
+internal tree. Leaves refer to source window indices and retain window IDs;
+bounds include off-screen windows. Overlapping/non-separable geometry and the
+32-level inference limit produce `unresolved` regions containing every remaining
+window reference. Floats, scratchpads, invalid tiled sizes, and unassigned or
+ambiguous workspace references remain separate. No hidden weights, split ratios,
+master roles, or scroll offsets are fabricated. See the
+[shape guide](../../README.md#general-layout-shape-without-compositor-changes).
 
 The dump includes all exposed window and layout facts, with `atomic: false` and
 explicit limitations. It is evidence for a future restore planner, **not** a
@@ -233,4 +245,7 @@ compositor mutation or performance claim is involved. Binary integration tests
 add complete capture/raw-field retention, empty inventories, missing keyboard,
 argument/connection failures, remote/decode errors, missing/invalid/lost initial
 events, and subscription cleanup. Read-only live release capture also succeeded;
-no desktop restoration was attempted.
+no desktop restoration was attempted. Shape tests cover scrolling rows/columns,
+nested tiling, master and unknown modes, overlap ambiguity, touching edges,
+empty/duplicate IDs, floating/scratchpad/unmatched windows, extreme coordinates,
+and bounded deep inference with no lost window references.

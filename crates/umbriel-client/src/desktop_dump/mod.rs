@@ -1,4 +1,6 @@
 //! Tool/example composition, not a new library API or a restore controller.
+mod shape;
+
 use std::{
     collections::BTreeMap,
     error::Error,
@@ -56,6 +58,7 @@ struct DesktopDump {
     atomic: bool,
     queries: BTreeMap<&'static str, Capture>,
     events: BTreeMap<&'static str, Capture>,
+    layout_shape: shape::DesktopShape,
     limitations: &'static [&'static str],
 }
 
@@ -81,6 +84,7 @@ const LIMITATIONS: &[&str] = &[
     "Window x/y are layout target positions; w/h are committed client content sizes, not necessarily target resize sizes.",
     "IPC does not expose output position, mode, scale, transform, or the complete output configuration.",
     "IPC does not expose layout trees, column membership/order, split ratios, master settings, scroll offsets, or stacking order.",
+    "layout_shape is a geometry-derived approximation, not the compositor's internal tree or a unique reconstruction.",
     "Layer surfaces have namespace/output/layer/mapped state but no geometry or exclusive-zone data.",
     "Launch commands, application documents/session contents, and full compositor configuration are not captured; this is not a restore program.",
 ];
@@ -147,6 +151,13 @@ async fn capture(endpoint: &Endpoint, options: &Options) -> ToolResult<DesktopDu
         );
     }
     let events = initial_events(endpoint, options, origin).await?;
+    let payload = |name| match &queries[name].result {
+        Payload::Ok { data } => data,
+        Payload::Unavailable { .. } => unreachable!("windows/workspaces are required snapshots"),
+    };
+    let windows: Windows = sonic_rs::from_value(payload("windows"))?;
+    let workspaces: Workspaces = sonic_rs::from_value(payload("workspaces"))?;
+    let layout_shape = shape::derive(&windows, &workspaces);
     Ok(DesktopDump {
         format: "umbriel-desktop-dump",
         schema_version: 1,
@@ -159,6 +170,7 @@ async fn capture(endpoint: &Endpoint, options: &Options) -> ToolResult<DesktopDu
         atomic: false,
         queries,
         events,
+        layout_shape,
         limitations: LIMITATIONS,
     })
 }

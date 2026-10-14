@@ -167,6 +167,24 @@ async fn captures_all_available_state_and_preserves_unknown_fields() {
         Some(42)
     );
     assert!(!value["limitations"].as_array().unwrap().is_empty());
+    assert_eq!(
+        value["layout_shape"]["exact_layout_tree"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(
+        value["layout_shape"]["workspaces"]
+            .as_array()
+            .unwrap()
+            .len(),
+        value["queries"]["workspaces"]["data"]
+            .as_array()
+            .unwrap()
+            .len()
+    );
+    assert_eq!(
+        value["layout_shape"]["scratchpads"]["synthetic-pad"],
+        sonic_rs::json!([1])
+    );
     for section in ["queries", "events"] {
         for (_, capture) in value[section].as_object().unwrap().iter() {
             let start = capture["started_elapsed_ms"].as_u64().unwrap();
@@ -194,6 +212,12 @@ async fn known_empty_inventories_are_successful_snapshots() {
                 .is_empty()
         );
     }
+    assert!(
+        value["layout_shape"]["workspaces"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

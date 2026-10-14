@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#high
 sources:
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
-    title: Clarify the library goal, add a shipped desktop-dump binary and example, and verify scripted peers and read-only live capture
+    title: Build and verify the desktop-dump tool; follow human direction to derive useful layout shape without modifying the compositor
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
     title: Implement and verify the six-crate library, review measured results and reuse boundaries, and rewrite the usage guide
   - resource: design/architecture/architecture1.gpt6a.md
@@ -105,6 +105,25 @@ Payloads live under `queries.<wire-query-name>.data` and
 explicitly `unavailable` with reason `no keyboard`, not a known-empty snapshot.
 Other query, decode, transport, or initial-event failures exit nonzero without
 publishing partial JSON. Shell redirection itself may still create an empty file.
+
+### General layout shape without compositor changes
+
+The dump also includes `layout_shape`: a geometry-derived hierarchy of
+`side_by_side` and `stacked` regions for each workspace, with bounds and leaf
+references into `queries.windows.data`. This reveals apparent scrolling columns
+and stacked rows, or spatial nesting in dwindle/master layouts, without requiring
+any compositor patch. Workspace mode/output/membership and floating flags are
+reported facts; the hierarchy is **inferred**, with `exact_layout_tree: false`.
+
+The inference uses separating lines between rectangles, prefers side-by-side
+grouping when both axes work, and retains off-screen windows. Overlaps or
+non-separable arrangements remain `unresolved`, rather than inventing a tree.
+Floating windows, scratchpads, invalid tiled geometry, and unmatched/ambiguous
+workspace membership are listed separately. All references use source array
+indices, so empty/duplicate window IDs do not lose windows. This provides the
+general shape useful for approximate recreation, not hidden split ratios or
+the unique original tiling history. It does not capture app contents (tabs,
+documents, running terminal processes); those are separate from desktop layout.
 
 Cargo examples are **not** built by ordinary `cargo build --release`. Use
 `cargo build --release -p umbriel-client --examples` for the client examples;
@@ -229,8 +248,9 @@ Detailed usage and ownership contracts live in the crate guides.
 The assembled implementation passed **152 tests, six doctests, formatting and
 warning-denying Clippy**. The environment overrides keep local Polars builds
 manageable; formatting names our packages to avoid traversing the sibling repo.
-The subsequent desktop-dump addition passed all **44 client tests** (seven new
-binary integration tests), client all-targets Clippy, and a read-only live release
+The subsequent desktop-dump and inferred-shape additions passed all **53 client
+tests** (including seven binary integration tests and nine shape tests), client
+all-targets Clippy, and a read-only live release
 capture of 29 windows and eight workspaces. This verifies capture, not restoration.
 
 ```sh
