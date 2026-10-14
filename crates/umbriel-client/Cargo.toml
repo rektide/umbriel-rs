@@ -16,3 +16,4 @@ thiserror = "2"
 [dev-dependencies]
 tokio = { version = "1.48", features = ["io-util", "test-util", "rt-multi-thread"] }
 tempfile = "3"
+socket2 = "0.6"

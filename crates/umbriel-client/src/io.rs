@@ -62,3 +62,66 @@ pub(crate) async fn step(
 fn lost(error: std::io::Error) -> EndReason {
     EndReason::TransportLost(error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncReadExt;
+    use umbriel_protocol::{codec::Limits, request::Request};
+
+    #[tokio::test]
+    async fn actual_short_writes_and_wouldblock_preserve_suffix() {
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        socket2::SockRef::from(&socket)
+            .set_send_buffer_size(1024)
+            .unwrap();
+        let text = "x".repeat(60000);
+        let mut session = Session::one_shot(1024);
+        session.admit(Request::Msg(&text)).unwrap();
+        let expected = session.outbound().to_vec();
+        let mut framer = Framer::new(Limits {
+            frame: 1024,
+            buffered: 1025,
+        });
+        step(&socket, &mut session, &mut framer, 1025)
+            .await
+            .unwrap();
+        assert!(
+            !session.outbound().is_empty(),
+            "small Unix send buffer forces a short write"
+        );
+        assert!(session.outbound().len() < expected.len());
+        loop {
+            let offered = session.begin_write().unwrap();
+            match socket.try_write(offered) {
+                Ok(count) => {
+                    session.write_progress(count).unwrap();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    let suffix = session.outbound().to_vec();
+                    session.write_progress(0).unwrap();
+                    assert_eq!(session.outbound(), suffix);
+                    break;
+                }
+                Err(error) => panic!("unexpected write: {error}"),
+            }
+        }
+        let length = expected.len();
+        let reader = tokio::spawn(async move {
+            let mut result = Vec::new();
+            let mut bytes = [0; 113];
+            while result.len() < length {
+                let count = peer.read(&mut bytes).await.unwrap();
+                assert!(count > 0);
+                result.extend_from_slice(&bytes[..count]);
+            }
+            result
+        });
+        while !session.outbound().is_empty() {
+            step(&socket, &mut session, &mut framer, 1025)
+                .await
+                .unwrap();
+        }
+        assert_eq!(reader.await.unwrap(), expected);
+    }
+}

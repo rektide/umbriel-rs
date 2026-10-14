@@ -29,6 +29,15 @@ impl Default for Options {
 }
 impl Options {
     pub(crate) fn limits(&self) -> Result<Limits, Error> {
+        if tokio::time::Instant::now()
+            .checked_add(self.connect_timeout)
+            .is_none()
+            || tokio::time::Instant::now()
+                .checked_add(self.request_timeout)
+                .is_none()
+        {
+            return Err(Error::InvalidOptions("request timing overflow"));
+        }
         let buffered = self
             .frame_limit
             .checked_add(1)
@@ -125,6 +134,9 @@ impl Endpoint {
                         });
                     }
                 }
+                if session.terminal().is_some() {
+                    break;
+                }
                 match io::step(&socket, &mut session, &mut framer, limits.buffered).await {
                     Ok(true) => {}
                     Ok(false) => {
@@ -154,10 +166,12 @@ impl Endpoint {
             return Err(error);
         }
         let terminal = session.terminal().expect("finished socket");
-        if terminal.reason == umbriel_session::EndReason::Eof {
-            if let Some(reply) = reply {
-                return Ok(reply);
-            }
+        if matches!(
+            terminal.reason,
+            umbriel_session::EndReason::Eof | umbriel_session::EndReason::RequestBufferPoisoned
+        ) && let Some(reply) = reply
+        {
+            return Ok(reply);
         }
         Err(ended(&session, reply.is_some()))
     }
