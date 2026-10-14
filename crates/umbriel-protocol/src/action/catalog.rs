@@ -29,4 +29,9 @@ pub const OVERVIEW_TOGGLE: Spec = Spec {
     category: Category::None,
 };
 
-pub const IMPLEMENTED: &[Spec] = &[OVERVIEW_TOGGLE];
+pub const WORKSPACE_SWITCH: Spec = Spec {
+    name: "workspace-switch",
+    category: Category::Workspace,
+};
+
+pub const IMPLEMENTED: &[Spec] = &[OVERVIEW_TOGGLE, WORKSPACE_SWITCH];
