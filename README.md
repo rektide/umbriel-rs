@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
+    title: Implement and verify native window changes and workspace impact through existing inventory replacement receipts without altering socket delivery
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
     title: Build and verify desktop capture, inferred layout shape, and opt-in existing Wayland output inspection without compositor modifications
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
@@ -182,6 +184,22 @@ Socket draining stays independent. For a compositor-free synthetic example:
 CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 \
   cargo run -p umbriel-polars --example snapshot_query -- windows
 ```
+
+### Report window changes and workspace impact
+
+```sh
+cargo run -p umbriel-client --example window_changes
+```
+
+This read-only native subscriber reports additions, removals and full typed
+window changes. A workspace move reports **both previous and new** workspace
+impact; scratchpad/empty references remain explicit. Equal censuses are filtered.
+The [state API and example guide](crates/umbriel-state/README.md#opt-in-window-change-evidence-and-workspace-impact)
+explains actual local replacement receipts, retained before/after status, and
+why these snapshot differences are not a complete compositor transition log.
+Socket delivery and its byte/loss/source contracts are unchanged. The addition
+passed 66 scoped client/state tests, four doctests, formatting and Clippy using
+a scripted Unix peer; no live compositor run is claimed for this consumer.
 
 ### Explore queries and actions
 

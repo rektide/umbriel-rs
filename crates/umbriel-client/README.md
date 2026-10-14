@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
+    title: Add and verify a read-only native window-change and workspace-impact consumer while retaining existing byte/loss/source delivery semantics
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
     title: Build and verify desktop capture, inferred layout shape, and bounded opt-in Wayland output-tool reuse without changing the compositor
   - resource: opencode://ses_ec773a6beffeBs3acUzwNtvSoZ
@@ -62,6 +64,25 @@ async fn query() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Window changes and workspace impact
+
+```sh
+cargo run -p umbriel-client --example window_changes
+```
+
+The [read-only subscriber](examples/window_changes.rs) retains the native source
+owner and installs window censuses through the existing optional state owner.
+It filters full typed equal rows from actual replacement receipts, then uses
+Kubeless relation traversal/impact to report both former and new workspaces on
+moves. Scratchpad and empty references are explicit, not valid workspace IDs.
+Reports carry before/after stamps and health, labeling first acquisition or stale
+reacquisition separately from uninterrupted observations. Gaps, decode failures
+and observer loss are not silent empty maps. Source end/lag terminates the
+example; there is no automatic reconnect or complete-transition-history claim.
+The impact crate is a dev-dependency only; native socket delivery is unchanged.
+See the [state API guide](../umbriel-state/README.md#opt-in-window-change-evidence-and-workspace-impact)
+for evidence/memory limits and the scripted peer verification (not a live run).
 
 ## Desktop capture tool and example
 
