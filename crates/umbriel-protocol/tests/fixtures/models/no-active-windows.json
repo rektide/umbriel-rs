@@ -1,0 +1,3 @@
+[
+  {"active": false, "app_id": "org.synthetic.Inactive", "content_type": "video", "floating": false, "focused": true, "h": 480, "id": "synthetic-inactive", "pid": -1, "scratchpad": "", "title": "Synthetic inactive", "urgent": false, "w": 640, "workspace": "SYNTH-1:42", "x": -640, "xdg_tag": "", "xwayland": false, "y": 0}
+]

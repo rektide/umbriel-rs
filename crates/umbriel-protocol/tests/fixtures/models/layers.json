@@ -1,0 +1,4 @@
+[
+  {"layer": "overlay", "mapped": true, "namespace": "synthetic-shell", "output": "SYNTH-1"},
+  {"layer": "future-layer", "mapped": false, "namespace": "", "output": ""}
+]

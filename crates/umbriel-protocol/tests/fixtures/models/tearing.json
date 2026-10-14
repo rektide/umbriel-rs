@@ -1,0 +1,13 @@
+{
+  "protocol": true,
+  "outputs": [
+    {"allowed": true, "fallback_reason": "", "last_commit_tearing": true, "last_presentation_flags": 2147483649, "last_presentation_presented": true, "last_presentation_vsync": false, "name": "SYNTH-1", "requested": true},
+    {"allowed": false, "fallback_reason": "synthetic fallback", "last_commit_tearing": false, "last_presentation_flags": null, "last_presentation_presented": null, "last_presentation_vsync": null, "name": "SYNTH-2", "requested": true},
+    {"allowed": true, "fallback_reason": "", "last_commit_tearing": false, "last_presentation_flags": 0, "last_presentation_presented": false, "last_presentation_vsync": null, "name": "SYNTH-3", "requested": false}
+  ],
+  "surfaces": [
+    {"app_id": "org.synthetic.Game", "eligible": true, "fullscreen": true, "hint": "async", "id": "synthetic-game", "output": "SYNTH-1", "rule_override": true, "title": "Synthetic game"},
+    {"app_id": "org.synthetic.Tool", "eligible": false, "fullscreen": false, "hint": "vsync", "id": "synthetic-tool", "output": "SYNTH-2", "rule_override": false, "title": "Synthetic tool"},
+    {"app_id": "", "eligible": false, "fullscreen": false, "hint": "future-hint", "id": "", "output": "", "rule_override": null, "title": ""}
+  ]
+}

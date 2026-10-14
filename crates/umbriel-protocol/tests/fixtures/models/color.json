@@ -1,0 +1,12 @@
+{
+  "color_manager": true,
+  "renderer": {"input_color_transform": true, "output_color_transform": false, "timeline": true},
+  "outputs": [
+    {"fallback_reason": "", "hdr_active": true, "hdr_mode": "auto", "hdr_requested": true, "name": "SYNTH-1", "primaries": "BT.2020", "render_format": "XR30", "sdr_white": 203.5, "supported_primaries": ["sRGB", "BT.2020"], "supported_transfer_functions": ["sRGB", "PQ", "extended linear", "gamma 2.2", "BT.1886"], "transfer_function": "PQ"},
+    {"fallback_reason": "synthetic fallback", "hdr_active": false, "hdr_mode": "future-hdr", "hdr_requested": false, "name": "SYNTH-2", "primaries": "none", "render_format": "invalid", "sdr_white": 80, "supported_primaries": [], "supported_transfer_functions": [], "transfer_function": "none"}
+  ],
+  "surfaces": [
+    {"app_id": "org.synthetic.Hdr", "id": "synthetic-hdr", "mastering_display_primaries": {"blue": {"x": 0.15, "y": 0.06}, "green": {"x": 0.3, "y": 0.6}, "red": {"x": 0.64, "y": 0.33}, "white": {"x": 0.3127, "y": 0.329}}, "mastering_luminance": {"max": 1000, "min": 0.005}, "max_cll": 1000, "max_fall": 400, "primaries": "Display P3", "title": "Synthetic HDR 雪", "transfer_function": "HLG"},
+    {"app_id": "", "id": "", "mastering_display_primaries": null, "mastering_luminance": null, "max_cll": 0, "max_fall": 0, "primaries": "future-primaries", "title": "", "transfer_function": "future-transfer"}
+  ]
+}

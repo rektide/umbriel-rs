@@ -3,6 +3,7 @@
 
 pub mod codec;
 pub mod envelope;
+pub mod model;
 pub mod request;
 
 /// Maximum outgoing request size, including the terminating LF.

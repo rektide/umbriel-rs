@@ -1,0 +1,8 @@
+{
+  "accent_primary": "#112233ff", "accent_secondary": "#223344ff",
+  "backdrop": "#00000080", "background": "#010203ff",
+  "border": {"focused": "#334455ff", "outer": "#000000ff", "scratchpad_focused": "#445566ff", "scratchpad_unfocused": "#556677ff", "unfocused": "#667788ff"},
+  "corner_radius": 12, "error": "#ff0000ff", "insert_hint": "#00ff0080",
+  "overview": {"background_tint": "#77889980", "badge": "#8899aaff", "workspace_background": "#99aabbff"},
+  "shadow": "#00000040", "text_muted": "#aabbccff", "text_primary": "#ddeeffff", "warning": "#ffff00ff"
+}
