@@ -105,3 +105,35 @@ async fn deadline_retains_transmission_uncertainty() {
     ));
     peer.abort();
 }
+
+#[tokio::test(start_paused = true)]
+async fn reply_then_hold_open_deadline_preserves_proven_transmission() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("socket");
+    let listener = UnixListener::bind(&path).unwrap();
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).await.unwrap();
+        stream
+            .get_mut()
+            .write_all(b"{\"ok\":null}\n")
+            .await
+            .unwrap();
+        // No clean EOF: paused time advances the request deadline, not a sleep.
+        std::future::pending::<()>().await;
+        drop(stream);
+    });
+    let result = Endpoint::new(path)
+        .request(Request::Query(Query::Submap), &Options::default())
+        .await;
+    assert!(matches!(
+        result,
+        Err(Error::TimedOut {
+            possibly_sent: true,
+            reply_observed: true
+        })
+    ));
+    peer.abort();
+}

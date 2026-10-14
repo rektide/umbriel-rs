@@ -89,7 +89,7 @@ async fn observe(endpoint: Endpoint) -> Result<(), Box<dyn std::error::Error>> {
     let submap: Option<String> = reply.decode()?;
     println!("{submap:?}");
     // Raw events permit selected borrowed projections in the caller's frame scope.
-    if let Some(message) = events.recv().await?.message() {
+    if let Some(message) = events.recv().await?.message()? {
         println!("{message:?}");
     }
     source.shutdown().await;
@@ -132,6 +132,16 @@ observers retire with explicit `DeliveryEnd::Lagged`, without blocking other
 observers or replies. A full queue on source termination still retains the
 source terminal reason separately. No latest-state coalescing is performed.
 Caller-retained frames and retired intervals are caller-owned storage.
+
+`Observation::message` returns `Result<Option<Message>, sonic_rs::Error>`:
+non-frame observations are `Ok(None)`, and malformed caller-constructed frames
+are decode errors rather than panics. Private validated `RawReply::message`
+remains infallible. If the driver disappears without a recorded native terminal,
+observers drain queued items then retain `DeliveryEnd::DriverLost`; admitted
+command/registration response loss returns `Error::DriverLost`, not an unsent
+`Closed` result. Such local loss cannot prove non-transmission or safe retry.
+For one-shot EOF deadlines, `reply_observed: true` also implies `possibly_sent:
+true`, even though the session's wire slot already retired at the reply.
 
 Dropping the last `Subscription` clone initiates source close; observers and
 status watchers do not keep it alive. `shutdown` closes all clones' source and

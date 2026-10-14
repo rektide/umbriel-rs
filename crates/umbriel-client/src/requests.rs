@@ -79,6 +79,10 @@ pub enum Error {
     QueueFull,
     #[error("subscription is closed (not transmitted)")]
     Closed,
+    /// Local owner disappeared after admission. Transmission/outcome evidence
+    /// is unavailable; this does not authorize retry of a mutating command.
+    #[error("subscription driver disappeared; an admitted command may have been transmitted")]
+    DriverLost,
     #[error("command belongs to epoch {requested}, current epoch is {current} (not transmitted)")]
     StaleEpoch { requested: u64, current: u64 },
 }
@@ -155,7 +159,8 @@ impl Endpoint {
         if result.is_err() {
             let terminal = session.close();
             return Err(Error::TimedOut {
-                possibly_sent: terminal.unresolved.is_some_and(|r| r.possibly_sent),
+                possibly_sent: reply.is_some()
+                    || terminal.unresolved.is_some_and(|r| r.possibly_sent),
                 reply_observed: reply.is_some(),
             });
         }

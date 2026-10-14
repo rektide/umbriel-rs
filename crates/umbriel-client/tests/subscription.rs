@@ -119,7 +119,7 @@ async fn two_observers_one_stalled_does_not_block_commands_or_other_observer() {
     for _ in 0..5 {
         peer.write(b"{\"data\":[],\"event\":\"windows\"}\n").await;
         assert!(matches!(
-            frame(&mut fast).await.message(),
+            frame(&mut fast).await.message().unwrap(),
             Some(Message::Event { .. })
         ));
     }
@@ -188,7 +188,7 @@ async fn keyboard_blank_and_independent_initialization() {
         started(&[Family::KeyboardLayout], Default::default()).await;
     peer.write(b"\n").await;
     assert!(matches!(
-        frame(&mut observer).await.message(),
+        frame(&mut observer).await.message().unwrap(),
         Some(Message::Blank)
     ));
     streaming(&subscription).await;

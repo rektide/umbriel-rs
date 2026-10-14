@@ -211,7 +211,7 @@ impl Subscription {
                 mpsc::error::TrySendError::Full(_) => Error::QueueFull,
                 mpsc::error::TrySendError::Closed(_) => Error::Closed,
             })?;
-        response.await.map_err(|_| Error::Closed)?
+        receive_response(response).await
     }
 
     /// Explicit epoch binding prevents an old-state action from running on a new
@@ -259,7 +259,7 @@ impl Subscription {
                 mpsc::error::TrySendError::Full(_) => Error::QueueFull,
                 mpsc::error::TrySendError::Closed(_) => Error::Closed,
             })?;
-        response.await.map_err(|_| Error::Closed)?
+        receive_response(response).await
     }
 
     /// Closes all clones' source and waits for actual socket/task cleanup.
@@ -624,5 +624,54 @@ fn status(session: &Session, epoch: u64, health: Health, last_end: Option<Termin
         health,
         families: Family::ALL.map(|f| session.family_status(f)),
         last_end,
+    }
+}
+
+async fn receive_response<T>(response: oneshot::Receiver<Result<T, Error>>) -> Result<T, Error> {
+    response.await.map_err(|_| Error::DriverLost)?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn admitted_response_owner_loss_never_claims_nontransmission() {
+        let (commands, mut ingress) = mpsc::channel(1);
+        let (controls, _controls) = mpsc::channel(1);
+        let (close, _close) = watch::channel(false);
+        let (_done, done) = watch::channel(false);
+        let session = Session::one_shot(1024);
+        let (_status, status) = watch::channel(status(&session, 1, Health::Streaming, None));
+        let source = Subscription {
+            owner: Arc::new(Owner {
+                commands,
+                controls,
+                capacity: Arc::new(Semaphore::new(1)),
+                close,
+                status,
+                done,
+            }),
+        };
+        let request = tokio::spawn(async move {
+            source
+                .request(1, Request::Msg("possibly-executed"), Duration::from_secs(5))
+                .await
+        });
+        let command = ingress.recv().await.unwrap();
+        let mut core = Session::one_shot(1024);
+        core.admit_prepared(command.prepared).unwrap();
+        let count = core.begin_write().unwrap().len();
+        core.write_progress(count).unwrap();
+        drop(command.reply); // local driver disappears after accounted transmission
+        assert!(matches!(request.await.unwrap(), Err(Error::DriverLost)));
+        assert!(core.close().unresolved.unwrap().possibly_sent);
+
+        let (reply, response) = oneshot::channel::<Result<Observer, Error>>();
+        drop(reply);
+        assert!(matches!(
+            receive_response(response).await,
+            Err(Error::DriverLost)
+        ));
     }
 }

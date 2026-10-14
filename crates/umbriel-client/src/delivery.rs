@@ -34,14 +34,19 @@ impl Observation {
             _ => None,
         }
     }
-    pub fn message(&self) -> Option<Message<'_>> {
-        self.frame()
-            .map(|frame| Message::decode(frame).expect("session validated frame"))
+    /// Decode a frame, including caller-constructed observations. Non-frame
+    /// variants return `Ok(None)`; malformed bytes return an explicit error.
+    pub fn message(&self) -> Result<Option<Message<'_>>, sonic_rs::Error> {
+        self.frame().map(Message::decode).transpose()
     }
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum DeliveryEnd {
+    /// Local delivery owner vanished without a native terminal. Command
+    /// transmission and source outcome cannot be inferred from this loss.
+    #[error("observation driver disappeared without a source terminal")]
+    DriverLost,
     #[error("observer lost observations at epoch {epoch}, receive position {position}")]
     Lagged { epoch: u64, position: u64 },
     #[error("source ended: {0:?}")]
@@ -67,13 +72,7 @@ impl Observer {
                 Ok(Some(item))
             }
             Err(mpsc::error::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::error::TryRecvError::Disconnected) => Err(self
-                .state
-                .lock()
-                .expect("delivery terminal lock")
-                .end
-                .clone()
-                .expect("producer retains terminal before close")),
+            Err(mpsc::error::TryRecvError::Disconnected) => Err(self.terminal()),
         }
     }
 
@@ -84,14 +83,17 @@ impl Observer {
                     item.retained_bytes().expect("admitted byte weight");
                 Ok(item)
             }
-            None => Err(self
-                .state
-                .lock()
-                .expect("delivery terminal lock")
-                .end
-                .clone()
-                .expect("producer retains terminal before close")),
+            None => Err(self.terminal()),
         }
+    }
+
+    fn terminal(&self) -> DeliveryEnd {
+        self.state
+            .lock()
+            .expect("delivery terminal lock")
+            .end
+            .get_or_insert(DeliveryEnd::DriverLost)
+            .clone()
     }
 }
 
@@ -140,8 +142,24 @@ impl Producer {
         Ok(())
     }
     pub(crate) fn finish(self, reason: DeliveryEnd) {
-        self.state.lock().expect("delivery terminal lock").end = Some(reason);
+        self.state
+            .lock()
+            .expect("delivery terminal lock")
+            .end
+            .get_or_insert(reason);
         // sender drops after terminal is installed, even when its queue is full.
+    }
+}
+
+impl Drop for Producer {
+    fn drop(&mut self) {
+        // Install loss before the final sender closes; never replace a normal
+        // terminal. Queued items and their byte reservations remain drainable.
+        self.state
+            .lock()
+            .expect("delivery terminal lock")
+            .end
+            .get_or_insert(DeliveryEnd::DriverLost);
     }
 }
 
@@ -158,6 +176,48 @@ fn terminal_text_bytes(terminal: &Terminal) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_observation_decode_distinguishes_nonframe_valid_and_malformed() {
+        assert!(Observation::Epoch { epoch: 1 }.message().unwrap().is_none());
+        let valid = Observation::Frame {
+            epoch: 1,
+            position: 1,
+            bytes: Arc::from(&b"{\"ok\":null}"[..]),
+        };
+        assert!(matches!(valid.message().unwrap(), Some(Message::Ok(_))));
+        for bytes in [
+            &b"not-json"[..],
+            &b"\xff"[..],
+            &b"{\"ok\":null,\"err\":\"bad\"}"[..],
+        ] {
+            let malformed = Observation::Frame {
+                epoch: 1,
+                position: 1,
+                bytes: Arc::from(bytes),
+            };
+            assert!(malformed.message().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn unexpected_producer_loss_drains_then_retains_local_loss() {
+        let item = Observation::Epoch { epoch: 1 };
+        let (producer, mut observer) = channel(1, item.retained_bytes().unwrap());
+        producer.push(item).unwrap();
+        drop(producer);
+        assert!(observer.try_recv().unwrap().is_some());
+        assert_eq!(observer.state.lock().unwrap().bytes, 0);
+        assert!(matches!(
+            observer.recv().await,
+            Err(DeliveryEnd::DriverLost)
+        ));
+        assert!(matches!(observer.try_recv(), Err(DeliveryEnd::DriverLost)));
+        let (producer, mut empty) = channel(1, 1024);
+        drop(producer);
+        assert!(matches!(empty.try_recv(), Err(DeliveryEnd::DriverLost)));
+        assert!(matches!(empty.recv().await, Err(DeliveryEnd::DriverLost)));
+    }
 
     #[tokio::test]
     async fn try_receive_drains_and_repeats_terminal_with_shared_accounting() {
