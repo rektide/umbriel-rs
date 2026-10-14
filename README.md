@@ -45,10 +45,12 @@ been benchmarked.
   unknown event names, and explicit blank subscription responses.
 - Requests for all seven queries, action dispatch, subscriptions, and headless
   output operations, with correct JSON escaping and LF-inclusive request limits.
+- Complete owned query and event payload models, opaque IDs, extensible enum
+  spellings, and typed event routing that preserves unknown families.
 
 The crate is sans-I/O and forbids unsafe code in its own implementation. Session
-scheduling and transport are the next layer; full response models and typed
-action grammar will expand the wire surface.
+scheduling and transport are separate layers; typed action grammar will expand
+the request surface further.
 
 ```sh
 cargo nextest run --workspace

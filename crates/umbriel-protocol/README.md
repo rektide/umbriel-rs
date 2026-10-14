@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Umbriel protocol substrate
-description: Implemented framing, checked Sonic envelopes, and the initial typed wire request surface.
+description: Implemented framing, checked Sonic envelopes, typed wire requests, and complete query and event payload models.
 resource: crates/umbriel-protocol/README.md
 status: draft
 generated:
@@ -10,6 +10,10 @@ generated:
 sources:
   - resource: opencode://ses_ecbc463e2ffedTrt7LV5wGlDNq
     title: Fresh protocol implementation, source-checked selective Sonic validation, and malformed-Unicode token-boundary correction
+  - resource: opencode://ses_ec7a72fc6ffedFA9NaqNKCxaP5
+    title: Implement all query and event payload models from compositor source with synthetic schema fixtures
+  - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
+    title: Parent source review and integration of the typed model surface and columnar handoff
   - resource: ../../design/architecture/architecture1.gpt6a.md
     title: Selected Sonic and sans-I/O multi-crate responsibilities
   - resource: ../../design/protocol/commands0.glm53m.md
@@ -58,17 +62,24 @@ This crate owns no socket, executor, request scheduler, or materialized state.
   own storage. Promote needed data before reusing the receive buffer.
 - `request::Request`: seven read-only queries, raw `msg` action strings,
   nonempty known-family subscriptions, output creation/destruction, and a raw
-  command escape hatch. No complete action grammar or response models are claimed.
+  command escape hatch. Action strings retain their separate upstream grammar.
+- `model`: owned payloads for all current queries and all six event families.
+  `Window` and `Workspace` keep opaque IDs, signed geometry/PID, and distinct
+  activation/focus fields. Extensible enum spellings survive as unknown values.
+  Required nullable fields distinguish a missing key from a known null.
+  `decode_event(&Message)` yields a typed known event, a borrowed unsupported
+  event, or `NotEvent`; ordinary replies stay available to their request owner.
 - `codec::encode` / `Request::encode`: replace reused caller byte storage with
   Sonic JSON plus LF. A bounded sink enforces 65536 bytes **including LF**.
   Failed encodes empty the destination while retaining capacity. Sonic's safe
   `BufferedWriter` adapter uses temporary serializer scratch, which is not an
   allocation ceiling for arbitrarily large source strings.
 
-The future session crate must interpret blank frames in subscription context,
-retain the one pending command's ownership across cancellation, handle partial
-writes and EOF, and route events independently of ordinary replies. Full models,
-typed action grammar, transport, state, Arrow, and Polars remain separate work.
+The session layer interprets blank frames in subscription context,
+retains the one pending command's ownership across cancellation, handles partial
+writes and EOF, and routes events independently of ordinary replies. Typed
+action grammar, transport, materialized state, and columnar processing are
+separate from these wire models.
 
 Verification commands: `cargo fmt --all --check`, `cargo nextest run --workspace`,
 and `cargo clippy --workspace --all-targets -- -D warnings`.
