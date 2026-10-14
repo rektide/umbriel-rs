@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
+    title: Record cross-repository implementation handoff and distinguish delivered publication work from the original delivery-cell proposal
   - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
     title: Implement and verify native window changes and workspace impact through existing inventory replacement receipts without altering socket delivery
   - resource: opencode://ses_ec61d939affe5ZJDMcnGHXS8Xc
@@ -328,9 +330,11 @@ the allocation benchmark uses a forwarding allocator only for measurement.
 
 - [Current architecture](design/architecture/architecture2.gpt6a.md) — implemented
   data paths, ownership, bounds and the reasons for the six-crate split.
-- [Kubeless asks and possible lifts](design/kubeless/asks0.gpt61s.md) — prioritize
-  an independent bounded delivery cell; retain current memory-view reuse and
-  native protocol/state/query policies.
+- [Kubeless integration handoff](design/kubeless/handoff0.gpt6a.md) — delivered
+  checked replacement and window-change/impact consumer, upstream publication
+  capabilities, repository scope, verification and continuation boundaries.
+- [Original Kubeless asks](design/kubeless/asks0.gpt61s.md) — source-grounded
+  reuse assessment preceding the selected publication-first implementation.
 - [Protocol reference](design/protocol/commands0.glm53m.md) and
   [source-review corrections](design/protocol/review0.gpt6a.md).
 - [Research and history index](design/index.md) — earlier designs, assessment,

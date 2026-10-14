@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
+    title: Add implementation handoff and distinguish current integration from original reuse proposals
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
     title: Integrated the implementation, source reviews, measurement corrections, and current documentation map
   - resource: architecture/architecture2.gpt6a.md
@@ -25,8 +27,10 @@ sources:
 - [Usage guide](../README.md): run the native examples and choose a crate.
 - [Implemented architecture](architecture/architecture2.gpt6a.md): six-crate
   boundaries, wire custody, independent observations, state and Polars data paths.
-- [Kubeless asks](kubeless/asks0.gpt61s.md): actual current reuse, a prioritized
-  delivery-cell lift, and the policies best retained in Umbriel.
+- [Kubeless integration handoff](kubeless/handoff0.gpt6a.md): delivered native
+  change/impact consumer, upstream changes, repository scope and verification.
+- [Original Kubeless asks](kubeless/asks0.gpt61s.md): source-grounded reuse and
+  delivery-cell proposals preceding the selected publication-first implementation.
 
 ## Protocol and implementation evidence
 
