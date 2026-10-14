@@ -27,7 +27,7 @@ sources:
   - resource: ../umbriel-protocol/src/request.rs
     title: Existing typed Request encoder and raw-command escape hatch
 verification:
-  method: 29 deterministic nextest cases, one README doctest, crate fmt check, and all-targets Clippy with warnings denied.
+  method: 30 deterministic nextest cases, one README doctest, crate fmt check, and all-targets Clippy with warnings denied.
   limits: No sockets, live compositor probes, timing benchmarks, or runtime adapter were used.
 ---
 

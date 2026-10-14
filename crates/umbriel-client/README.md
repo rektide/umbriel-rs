@@ -20,6 +20,9 @@ sources:
     title: Independent bounded observers and explicit reconnect gaps
   - resource: file:///home/rektide/archive/noctalia-dev/umbriel/src/cli/ipc_client.cpp
     title: CLI environment precedence and byte-preserving socket name construction
+verification:
+  method: Scripted Unix peer tests and paused Tokio time, scoped nextest and doctests, formatting, and all-targets Clippy with warnings denied.
+  limits: No live compositor mutation, production deployment, throughput benchmark, state store, or columnar execution.
 ---
 
 # Umbriel client
@@ -36,6 +39,8 @@ A truncated EOF tail remains a protocol error even after a native reply.
 `RawReply::decode` selects a borrowed projection or owned result; remote rejection
 and local decode failure are distinct. Connection failures are provably unsent;
 terminal/deadline errors expose possible transmission and native-reply evidence.
+Dropping a one-shot future closes that socket; it cannot roll back a possibly
+executed request and does not trigger retry.
 
 ```rust,no_run
 use umbriel_client::{Discovery, Options};
@@ -113,11 +118,15 @@ budget. Complete frames drain before EOF; unterminated tails fail.
 ## Independent delivery and source lifecycle
 
 Each observer owns a bounded every-observation queue. Raw frames use shared
-`Arc<[u8]>`, not mandatory owned JSON trees. With capacity **N** and maximum
-frame bytes **F**, retained raw-frame bytes are at most **N × F** per observer;
-metadata/epoch/gap items are also counted against N. Terminal records carry a
-bounded frame-derived error description, separately from queue slots. Options
-check byte-bound arithmetic and bound active observer count. Already queued
+`Arc<[u8]>`, not mandatory owned JSON trees. Both `observer_capacity` and
+`observer_byte_capacity` apply: logical queued bytes charge inline metadata,
+raw frame bytes, and gap diagnostic text. Shared frame bytes are conservatively
+charged in full to each observer. Channel/allocator overhead is additionally
+bounded by slot count. With capacity **N** and maximum frame bytes **F**, raw
+frame storage is also at most **N × F**. One final terminal record is retained
+separately even at either budget, never pushed into an already-full queue;
+source diagnostics derive from bounded inbound frames or local I/O/framing errors.
+Options check byte-bound arithmetic and bound active observer count. Already queued
 items drain before the retained terminal error, which remains repeatable. Slow
 observers retire with explicit `DeliveryEnd::Lagged`, without blocking other
 observers or replies. A full queue on source termination still retains the

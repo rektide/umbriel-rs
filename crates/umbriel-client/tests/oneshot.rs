@@ -61,6 +61,10 @@ async fn real_split_reply_and_remote_error() {
     assert!(matches!(reply.decode::<bool>(), Err(Error::Decode(_))));
     let reply = exchange(vec![b"{\"err\":\"nope\"}\n"]).await.unwrap();
     assert!(matches!(reply.decode::<()>(), Err(Error::Remote(text)) if text == "nope"));
+    let reply = exchange(vec![b"{\"err\":\"request too long\"}\n"])
+        .await
+        .unwrap();
+    assert!(matches!(reply.decode::<()>(), Err(Error::Remote(text)) if text == "request too long"));
 }
 
 #[tokio::test]

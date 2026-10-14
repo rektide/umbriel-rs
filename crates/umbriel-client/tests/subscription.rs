@@ -285,14 +285,14 @@ async fn default_disconnect_is_terminal_and_truncated_tail_is_protocol_loss() {
     subscription.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn opt_in_reconnect_has_gap_new_epoch_and_never_replays_commands() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("socket");
     let listener = UnixListener::bind(&path).unwrap();
     let options = SubscriptionOptions {
         reconnect: Reconnect::Retry {
-            delay: Duration::ZERO,
+            delay: Duration::from_secs(1),
             max_attempts: 1,
         },
         ..Default::default()
@@ -320,11 +320,13 @@ async fn opt_in_reconnect_has_gap_new_epoch_and_never_replays_commands() {
             .request(1, Request::Msg("old-queued"), Duration::from_secs(60))
             .await
     });
+    let disconnected_at = tokio::time::Instant::now();
     first_peer.eof().await;
     assert!(
         matches!(active.await.unwrap(), Err(Error::Ended { terminal, .. }) if terminal.unresolved.unwrap().possibly_sent)
     );
     let second_peer = accept(&listener).await;
+    assert!(tokio::time::Instant::now() >= disconnected_at + Duration::from_secs(1));
     assert!(second_peer.read().await.contains("subscribe"));
     assert!(matches!(
         queued.await.unwrap(),
@@ -450,4 +452,111 @@ async fn invalid_subscription_options_fail_before_connect() {
             .await,
         Err(Error::InvalidOptions(_))
     ));
+}
+
+#[tokio::test]
+async fn frame_work_budget_does_not_strand_buffered_frames_or_replies() {
+    let (_dir, subscription, mut observer, peer) = started(
+        &[Family::Windows],
+        SubscriptionOptions {
+            observer_capacity: 2,
+            ..Default::default()
+        },
+    )
+    .await;
+    peer.write(b"{\"event\":\"windows\",\"data\":[]}\n").await;
+    frame(&mut observer).await;
+    let handle = subscription.clone();
+    let request = tokio::spawn(async move {
+        handle
+            .request(1, Request::Query(Query::Submap), Duration::from_secs(10))
+            .await
+    });
+    peer.read().await;
+    let mut burst = b"{\"event\":\"windows\",\"data\":[]}\n".repeat(500);
+    burst.extend_from_slice(b"{\"ok\":\"after-burst\"}\n");
+    peer.write(&burst).await;
+    assert_eq!(
+        request.await.unwrap().unwrap().decode::<String>().unwrap(),
+        "after-burst"
+    );
+    observer.recv().await.unwrap();
+    observer.recv().await.unwrap();
+    assert!(matches!(
+        observer.recv().await,
+        Err(DeliveryEnd::Lagged { .. })
+    ));
+    subscription.shutdown().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelled_command_drain_deadline_closes_instead_of_reassigning_slot() {
+    let options = SubscriptionOptions {
+        cancellation_drain_timeout: Duration::from_secs(1),
+        ..Default::default()
+    };
+    let (_dir, subscription, mut observer, peer) = started(&[Family::Windows], options).await;
+    peer.write(b"{\"event\":\"windows\",\"data\":[]}\n").await;
+    frame(&mut observer).await;
+    let handle = subscription.clone();
+    let active = tokio::spawn(async move {
+        handle
+            .request(1, Request::Msg("active"), Duration::from_secs(60))
+            .await
+    });
+    peer.read().await;
+    active.abort();
+    assert!(active.await.unwrap_err().is_cancelled());
+    assert_eq!(peer.read().await, "");
+    loop {
+        if let Err(end) = observer.recv().await {
+            assert!(
+                matches!(end, DeliveryEnd::Source(terminal) if terminal.unresolved.is_some_and(|r| r.possibly_sent && r.waiter == umbriel_session::Waiter::Stopped(umbriel_session::StopReason::Cancelled)))
+            );
+            break;
+        }
+    }
+    subscription.shutdown().await;
+}
+
+#[tokio::test]
+async fn subscription_rejection_preserves_remote_text_and_never_sends_queued_action() {
+    let (_dir, subscription, mut observer, peer) =
+        started(&[Family::Windows], Default::default()).await;
+    let handle = subscription.clone();
+    let queued = tokio::spawn(async move {
+        handle
+            .request(1, Request::Msg("must-not-send"), Duration::from_secs(60))
+            .await
+    });
+    peer.write(b"{\"err\":\"unsupported family\"}\n").await;
+    assert!(matches!(queued.await.unwrap(), Err(Error::Closed)));
+    assert_eq!(peer.read().await, "");
+    loop {
+        if let Err(end) = observer.recv().await {
+            assert!(
+                matches!(end, DeliveryEnd::Source(terminal) if terminal.reason == EndReason::SubscriptionRejected("unsupported family".into()))
+            );
+            break;
+        }
+    }
+    subscription.shutdown().await;
+}
+
+#[tokio::test]
+async fn clean_eof_defaults_to_no_reconnect() {
+    let (_dir, subscription, mut observer, peer) =
+        started(&[Family::Windows], Default::default()).await;
+    peer.write(b"{\"event\":\"windows\",\"data\":[]}\n").await;
+    frame(&mut observer).await;
+    peer.eof().await;
+    assert!(
+        matches!(observer.recv().await.unwrap(), Observation::Gap { epoch: 1, terminal } if terminal.reason == EndReason::Eof)
+    );
+    assert!(
+        matches!(observer.recv().await, Err(DeliveryEnd::Source(terminal)) if terminal.reason == EndReason::Eof)
+    );
+    assert_eq!(subscription.status().epoch, 1);
+    assert_eq!(subscription.status().health, Health::Closed);
+    subscription.shutdown().await;
 }

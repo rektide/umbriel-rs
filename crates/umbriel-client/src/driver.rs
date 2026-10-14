@@ -34,6 +34,9 @@ pub struct SubscriptionOptions {
     /// Includes active, queued, and ingress commands, not just channel storage.
     pub command_capacity: usize,
     pub observer_capacity: usize,
+    /// Per-observer logical queued bytes, including metadata and gap diagnostics.
+    /// One terminal reason is retained separately even when this budget is full.
+    pub observer_byte_capacity: usize,
     pub max_observers: usize,
     /// Maximum time to finish/drain a cancelled possibly-sent command.
     pub cancellation_drain_timeout: Duration,
@@ -45,6 +48,7 @@ impl Default for SubscriptionOptions {
             io: Options::default(),
             command_capacity: 16,
             observer_capacity: 16,
+            observer_byte_capacity: 128 * 1024 * 1024,
             max_observers: 16,
             cancellation_drain_timeout: Duration::from_secs(10),
             reconnect: Reconnect::Never,
@@ -114,6 +118,15 @@ impl Endpoint {
         {
             return Err(Error::InvalidOptions("capacities must be nonzero"));
         }
+        if options.observer_byte_capacity < std::mem::size_of::<Observation>() {
+            return Err(Error::InvalidOptions(
+                "observer byte capacity cannot hold epoch metadata",
+            ));
+        }
+        options
+            .observer_byte_capacity
+            .checked_mul(options.max_observers)
+            .ok_or(Error::InvalidOptions("observer byte budgets overflow"))?;
         if options.command_capacity > Semaphore::MAX_PERMITS
             || options.observer_capacity > Semaphore::MAX_PERMITS
             || options.max_observers > Semaphore::MAX_PERMITS
@@ -150,7 +163,8 @@ impl Endpoint {
         let (done_tx, done) = watch::channel(false);
         let status_value = status(&session, 1, Health::Initializing, None);
         let (status_tx, status) = watch::channel(status_value);
-        let (producer, observer) = delivery::channel(options.observer_capacity);
+        let (producer, observer) =
+            delivery::channel(options.observer_capacity, options.observer_byte_capacity);
         let owner = Arc::new(Owner {
             commands,
             controls,
@@ -210,6 +224,16 @@ impl Subscription {
         request: Request<'_>,
         deadline: Duration,
     ) -> Result<RawReply, Error> {
+        let status = self.status();
+        if matches!(status.health, Health::Disconnected | Health::Closed) {
+            return Err(Error::Closed);
+        }
+        if epoch != status.epoch {
+            return Err(Error::StaleEpoch {
+                requested: epoch,
+                current: status.epoch,
+            });
+        }
         let permit = self
             .owner
             .capacity
@@ -308,9 +332,29 @@ impl Driver {
             let _ = register.reply.send(Err(Error::QueueFull));
             return;
         }
-        let (producer, observer) = delivery::channel(self.options.observer_capacity);
-        let _ = producer.push(Observation::Epoch { epoch: self.epoch });
-        if register.reply.send(Ok(observer)).is_ok() {
+        let (producer, observer) = delivery::channel(
+            self.options.observer_capacity,
+            self.options.observer_byte_capacity,
+        );
+        let status = self.status.borrow().clone();
+        let announcement = if status.health == Health::Disconnected {
+            Observation::Gap {
+                epoch: self.epoch,
+                terminal: status.last_end.expect("disconnected reason"),
+            }
+        } else {
+            Observation::Epoch { epoch: self.epoch }
+        };
+        if producer.push(announcement.clone()).is_err() {
+            producer.finish(match announcement {
+                Observation::Gap { terminal, .. } => DeliveryEnd::Source(terminal),
+                _ => DeliveryEnd::Lagged {
+                    epoch: self.epoch,
+                    position: 0,
+                },
+            });
+            let _ = register.reply.send(Ok(observer));
+        } else if register.reply.send(Ok(observer)).is_ok() {
             self.producers.push(producer);
         }
     }
@@ -357,7 +401,9 @@ impl Driver {
                 frames += 1;
                 match session.receive(frame) {
                     Ok(Effect::Reply { .. }) => {
-                        if let Some(command) = pending.take() {
+                        if let Some(command) = pending.take()
+                            && !command.reply.is_closed()
+                        {
                             let _ = command.reply.send(Ok(RawReply {
                                 frame: Arc::from(frame),
                             }));
@@ -373,14 +419,16 @@ impl Driver {
                             ..
                         },
                     ) => {
-                        self.publish(
-                            Observation::Frame {
-                                epoch: self.epoch,
-                                position: local_receive_position,
-                                bytes: Arc::from(frame),
-                            },
-                            local_receive_position,
-                        );
+                        if !self.producers.is_empty() {
+                            self.publish(
+                                Observation::Frame {
+                                    epoch: self.epoch,
+                                    position: local_receive_position,
+                                    bytes: Arc::from(frame),
+                                },
+                                local_receive_position,
+                            );
+                        }
                     }
                     Ok(Effect::SubscriptionRejected { .. }) | Err(_) => break,
                 }

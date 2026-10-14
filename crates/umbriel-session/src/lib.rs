@@ -285,18 +285,13 @@ impl Session {
     /// Admission succeeds only after the previous reply has actually drained.
     /// Raw `subscribe` is rejected too; it cannot bypass the fixed-set contract.
     pub fn admit(&mut self, request: Request<'_>) -> Result<LocalRequestId, Error> {
+        self.ensure_admission()?;
         self.admit_prepared(PreparedCommand::new(request)?)
     }
 
     /// Transfer already checked storage without encoding again or bypassing validation.
     pub fn admit_prepared(&mut self, command: PreparedCommand) -> Result<LocalRequestId, Error> {
-        self.ensure_live()?;
-        if self.slot.is_some() {
-            return Err(Error::Busy);
-        }
-        if !matches!(self.phase, Phase::Fresh | Phase::Streaming) {
-            return Err(Error::NotReady);
-        }
+        self.ensure_admission()?;
         self.last_request_id
             .checked_add(1)
             .ok_or(Error::LocalRequestIdsExhausted)?;
@@ -501,6 +496,17 @@ impl Session {
         } else {
             Ok(())
         }
+    }
+
+    fn ensure_admission(&self) -> Result<(), Error> {
+        self.ensure_live()?;
+        if self.slot.is_some() {
+            return Err(Error::Busy);
+        }
+        if !matches!(self.phase, Phase::Fresh | Phase::Streaming) {
+            return Err(Error::NotReady);
+        }
+        Ok(())
     }
 
     fn install_slot(&mut self) -> Result<LocalRequestId, Error> {

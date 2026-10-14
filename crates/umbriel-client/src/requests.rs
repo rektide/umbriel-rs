@@ -8,7 +8,7 @@ use umbriel_protocol::{
     envelope::Message,
     request::Request,
 };
-use umbriel_session::{Effect, ProtocolFailure, Session, Terminal};
+use umbriel_session::{Effect, Session, Terminal};
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -196,12 +196,10 @@ pub(crate) async fn connect(endpoint: &Endpoint, options: &Options) -> Result<Un
 }
 pub(crate) fn ended(session: &Session, reply_observed: bool) -> Error {
     Error::Ended {
-        terminal: session.terminal().cloned().unwrap_or(Terminal {
-            reason: umbriel_session::EndReason::Protocol(ProtocolFailure::Framing(
-                "driver ended without terminal".into(),
-            )),
-            unresolved: None,
-        }),
+        terminal: session
+            .terminal()
+            .expect("connection retained terminal reason")
+            .clone(),
         reply_observed,
     }
 }
