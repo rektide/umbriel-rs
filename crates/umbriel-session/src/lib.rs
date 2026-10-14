@@ -545,3 +545,43 @@ const fn family_index(family: Family) -> usize {
         Family::Submap => 5,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_request_ids_never_wrap_or_mutate_failed_admission() {
+        let mut session = Session::one_shot(1024);
+        session.last_request_id = u64::MAX;
+        assert!(matches!(
+            session.admit(Request::Msg("noop")),
+            Err(Error::LocalRequestIdsExhausted)
+        ));
+        assert!(session.slot.is_none());
+        assert!(session.outbound.is_empty());
+        assert_eq!(session.phase, Phase::Fresh);
+    }
+
+    #[test]
+    fn local_receive_positions_never_wrap() {
+        let mut session = Session::one_shot(1024);
+        session.admit(Request::Msg("noop")).unwrap();
+        let count = session.begin_write().unwrap().len();
+        session.write_progress(count).unwrap();
+        session.local_receive_position = u64::MAX;
+        assert!(matches!(
+            session.receive(br#"{"ok":null}"#),
+            Err(Error::Protocol(ProtocolFailure::LocalPositionExhausted))
+        ));
+        assert_eq!(session.local_receive_position, u64::MAX);
+        assert!(
+            session
+                .terminal()
+                .unwrap()
+                .unresolved
+                .unwrap()
+                .possibly_sent
+        );
+    }
+}
