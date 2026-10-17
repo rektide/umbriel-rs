@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6-astra#high
 sources:
+  - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
+    title: Link the implemented Longcat consumer and its Umbriel-side requirements as a later continuation
   - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
     title: Assess the asks against Kubeless spirit, commission three sequential implementations, review results, and clarify the unexpected cross-repository scope
   - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
@@ -28,6 +30,17 @@ verification:
 ---
 
 # Umbriel / Kubeless handoff
+
+## Subsequent consumer and requirements
+
+The 2026-10-17 [layout-control needs](../layout-control/longcat-needs0.gpt6a.md)
+bring the now-implemented Longcat consumer back to this repository. They explain
+which native compositor facts/operations are still missing, which Rust-library
+improvements could help, and how existing Kubeless receipts/impact/scheduling
+compose with them. The [consumer's implementation return](file:///home/rektide/src/zooming-kittens/design/remake/kubeless-asks0.gpt6a.md)
+records actual adoption and verified integration lessons. Build-first/lift-later
+remains the direction; upstream scheduler fairness is explicitly deferred.
+The delivered work and original scope account below remain historical evidence.
 
 ## Start here: scope and repository ownership
 

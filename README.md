@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
+    title: Connect the Longcat consumer's native layout-control requirements and Kubeless composition opportunities
   - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
     title: Record cross-repository implementation handoff and distinguish delivered publication work from the original delivery-cell proposal
   - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
@@ -328,6 +330,10 @@ the allocation benchmark uses a forwarding allocator only for measurement.
 
 ## Design and next opportunities
 
+- [Layout-control needs: Longcat, Umbriel and Kubeless](design/layout-control/longcat-needs0.gpt6a.md)
+  — exact topology/sizing observations, explicit-target and conditional writes,
+  restoration alternatives, Rust-library improvements and consumer-first Kubeless
+  compositions. These are proposals; current control capabilities are unchanged.
 - [Current architecture](design/architecture/architecture2.gpt6a.md) — implemented
   data paths, ownership, bounds and the reasons for the six-crate split.
 - [Kubeless integration handoff](design/kubeless/handoff0.gpt6a.md) — delivered

@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
+    title: Add the native layout-control requirements and cross-repository composition entry point
   - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
     title: Add implementation handoff and distinguish current integration from original reuse proposals
   - resource: opencode://ses_ecbf8c82affe2AMb3CQpUO3eoZ
@@ -31,6 +33,15 @@ sources:
   change/impact consumer, upstream changes, repository scope and verification.
 - [Original Kubeless asks](kubeless/asks0.gpt61s.md): source-grounded reuse and
   delivery-cell proposals preceding the selected publication-first implementation.
+
+## Consumer requirements and proposed next work
+
+- [Layout-control needs — Longcat, Umbriel and Kubeless](layout-control/longcat-needs0.gpt6a.md):
+  the implemented consumer's missing native facts and operations; separates
+  compositor changes from Rust-library ergonomics and Kubeless mechanisms.
+  Compares observation-first, conditional group sizing and native reversible
+  tokens, with owner-specific landing steps and acceptance evidence. Scheduler
+  fairness stays deferred; none of these proposals is an implemented protocol.
 
 ## Protocol and implementation evidence
 
