@@ -5,9 +5,11 @@ description: Progressive navigation to current architecture, protocol evidence, 
 resource: design/index.md
 status: current
 generated:
-  at: 2026-10-14
+  at: 2026-10-18
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
+    title: Link the activity-service brainstorming and systemd/journal ticket handoff
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
     title: Add the native layout-control requirements and cross-repository composition entry point
   - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
@@ -36,6 +38,10 @@ sources:
 
 ## Consumer requirements and proposed next work
 
+- [Activity service and journal replay](activity/service0.gpt6a.md): foreground
+  user-service proposal, notify/watchdog crate choices, structured journal records,
+  shared JSONL/NDJSON/logfmt output and history re-emission. Work anchor:
+  `umbrs-activity`; only the five-second default is commissioned immediately.
 - [Layout-control needs — Longcat, Umbriel and Kubeless](layout-control/longcat-needs0.gpt6a.md):
   the implemented consumer's missing native facts and operations; separates
   compositor changes from Rust-library ergonomics and Kubeless mechanisms.
