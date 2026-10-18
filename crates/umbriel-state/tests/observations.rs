@@ -63,25 +63,26 @@ fn title_churn_and_timer_only_progress_emit_latest_once() {
     a.title = "latest".into();
     a.workspace = "new-workspace".into();
     r.observe(1, ms(600), &[a]).unwrap();
-    assert_eq!(r.deadline(), Some(ms(750)));
-    assert!(r.poll(ms(749)).unwrap().is_none());
-    let out = r.poll(ms(750)).unwrap().unwrap();
+    assert_eq!(r.deadline(), Some(ms(5000)));
+    assert!(r.poll(ms(4999)).unwrap().is_none());
+    let out = r.poll(ms(5000)).unwrap().unwrap();
     let latest = out.window.unwrap();
     assert_eq!(latest.title, "latest");
     assert_eq!(latest.workspace.as_str(), "new-workspace");
     assert_eq!(out.since, ms(0));
-    r.observe(1, ms(1000), &[window("A")]).unwrap();
+    r.observe(1, ms(5250), &[window("A")]).unwrap();
     assert_eq!(
         r.deadline(),
         None,
         "same-ID metadata does not create a new episode"
     );
-    assert!(r.poll(ms(1500)).unwrap().is_none());
+    assert!(r.poll(ms(5750)).unwrap().is_none());
 }
 
 #[test]
 fn a_b_a_and_repeat_episodes() {
-    let mut r = StableActiveReducer::default();
+    // Pinned dwell keeps these episode traces decoupled from the default.
+    let mut r = StableActiveReducer::new(ms(750));
     r.observe(1, ms(0), &[window("A")]).unwrap();
     r.observe(1, ms(400), &[window("B")]).unwrap();
     r.observe(1, ms(450), &[window("A")]).unwrap();
@@ -104,7 +105,8 @@ fn a_b_a_and_repeat_episodes() {
 
 #[test]
 fn none_cancels_immediately_and_gaps_restart_dwell() {
-    let mut r = StableActiveReducer::default();
+    // Pinned dwell keeps these episode traces decoupled from the default.
+    let mut r = StableActiveReducer::new(ms(750));
     r.observe(1, ms(0), &[window("A")]).unwrap();
     r.observe(1, ms(700), &[]).unwrap();
     assert!(r.poll(ms(750)).unwrap().is_none());

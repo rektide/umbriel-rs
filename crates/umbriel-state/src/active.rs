@@ -79,7 +79,7 @@ pub struct StableActiveReducer {
 
 impl Default for StableActiveReducer {
     fn default() -> Self {
-        Self::new(Duration::from_millis(750))
+        Self::new(Duration::from_secs(5))
     }
 }
 

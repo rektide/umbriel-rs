@@ -168,7 +168,8 @@ mod tests {
             .await
             .unwrap();
         let origin = Instant::now();
-        let mut reducer = StableActiveReducer::default();
+        // Pinned dwell: this race check is independent of the default dwell.
+        let mut reducer = StableActiveReducer::new(Duration::from_millis(750));
         // Establish initial A at the consumer's observation time, not a prior duration.
         loop {
             let item = observer.recv().await.unwrap();

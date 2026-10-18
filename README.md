@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_eaf7cba09ffe6roChmdCMdpIpd
+    title: Raise the default stable-active dwell from 750 ms to 5 s across reducer default, example, and usage guides
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
     title: Connect the Longcat consumer's native layout-control requirements and Kubeless composition opportunities
   - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
@@ -54,7 +56,7 @@ the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 - A read-only **desktop JSON dump** executable and example.
 - Geometry-derived **layout shape** and optional existing Wayland monitor inspection,
   with **no compositor patches**.
-- A native **750 ms stable-active-window** example—not the project's goal.
+- A native **5 s stable-active-window** example—not the project's goal.
 - Complete snapshot batches, lazy queries, and derived output with provenance.
   **No C Data Interface bridge.**
 
@@ -164,7 +166,7 @@ Cargo examples are **not** built by ordinary `cargo build --release`. Use
 their executables appear under `target/release/examples/`, while the desktop-dump
 binary appears directly under `target/release/`.
 
-### Report a window after 750 ms of stable activation
+### Report a window after 5 s of stable activation
 
 ```sh
 cargo run -p umbriel-client --example active_window

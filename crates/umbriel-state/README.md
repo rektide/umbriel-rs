@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#medium
 sources:
+  - resource: opencode://ses_eaf7cba09ffe6roChmdCMdpIpd
+    title: Raise the default stable-active dwell from 750 ms to 5 s; pin dwell-dependent traces to explicit thresholds
   - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
     title: Adopt checked replacements and opt-in actual window receipts, verify native change/impact reporting and retained-snapshot continuity limits
   - resource: opencode://ses_ec75b4878ffekQ95N9mUgpOTl7
@@ -167,7 +169,7 @@ it does not silently reconnect or claim a complete historical transition log.
 ## Stable active identity
 
 `StableActiveReducer` is deterministic and clock-injected with monotonic
-`Duration` values. The default dwell is **750 ms**. `observe(epoch, now, windows)`
+`Duration` values. The default dwell is **5 s**. `observe(epoch, now, windows)`
 selects `active`, never `focused`; only ID, title, app ID, workspace, and scratchpad
 metadata survive the frame. Same-ID updates skip unchanged workspace-ID copies
 and reuse string storage where possible without resetting the deadline.
