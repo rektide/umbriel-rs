@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
-    title: User commissioning, current-source inspection, crate research, service design and ticket decomposition; only the five-second default commissioned for immediate implementation
+    title: Initial service commissioning and ticket decomposition, followed by tracing-first direction and a linked records refinement
   - resource: ../../crates/umbriel-client/examples/active_window.rs
     title: Existing continuous observer, identity dwell, queued-event precedence and invalidation on gaps
   - resource: ../../crates/umbriel-client/Cargo.toml
@@ -43,6 +43,13 @@ extensions:
 ---
 
 # Activity service and journal replay
+
+**Continuation:** [Tracing-native activity records](records0.gpt6a.md) records the
+user's subsequent selection of tracing-journald for all journal export and tracing
+layers for every activity output. Its field-first contract supersedes this draft's
+canonical-JSON-payload recommendation, and its capability inventory/delivery order
+refines the original broad CLI ticket. The initial brainstorm remains below as
+context; current scope and dependencies live in the tickets.
 
 ## Situation and commissioning
 
