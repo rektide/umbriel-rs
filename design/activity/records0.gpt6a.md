@@ -5,11 +5,11 @@ description: A field-first activity event contract, tracing layer composition, c
 resource: design/activity/records0.gpt6a.md
 status: proposed
 generated:
-  at: 2026-10-18
+  at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
-    title: Human selection of tracing-journald and tracing-native output, request for OSC 3008/7501, capability reassessment and first record shape
+    title: Human selection of tracing-native output and accepted identities plus metadata updates; capability reassessment, record shape and reviewed FX reuse findings
   - resource: service0.gpt6a.md
     title: Predecessor service brainstorm and ticket decomposition, revised here toward tracing-first delivery
   - resource: ../../crates/umbriel-client/examples/active_window.rs
@@ -24,6 +24,24 @@ sources:
     title: Actual scalar field encoding, custom prefixes, initialization probe and ignored per-event send result
   - resource: file:///home/rektide/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-subscriber-0.3.23/src/fmt/format/json.rs
     title: Existing newline-delimited JSON formatter and structured-value limitations
+  - resource: prior-art0.glm53fx.md
+    title: Commissioned hidden-aware survey of prior journald, tracing and OSC work
+  - resource: file:///home/rektide/src/cyclrs/telemetry/journald/src/dispatch.rs
+    title: Verified direct Dispatch submission and disabled-diagnostics field test
+  - resource: file:///home/rektide/src/cyclrs/telemetry/journald/README.md
+    title: Implemented stock journald recorder and readback visibility limits
+  - resource: file:///home/rektide/src/cyclrs/source/journald/src/read.rs
+    title: Verified exact cursor positioning and bounded finite range traversal
+  - resource: file:///home/rektide/src/cyclrs/source/journald/src/lib.rs
+    title: Domain-coupled feed types and thread-local native reader ownership
+  - resource: file:///home/rektide/src/cyclrs/source/journald/README.md
+    title: Byte enumeration, limits and native reader caveats
+  - resource: file:///home/rektide/src/cyclrs/design/architecture-refresh/journal-syn0.gpt6astra.md
+    title: Earlier journal comparison and corrected visibility/durability claims
+  - resource: file:///home/rektide/src/systemd/src/shared/osc-context.c
+    title: OSC 3008 identity/escaping and supported context types, including service
+  - resource: file:///home/rektide/src/term-preserver/design/tracking/osc-protocols.glm53m.md
+    title: OSC 7501 design research, status replacement and terminal-bound lifetimes
 extensions:
   ticket: umbrs-activity-records
   related_work: [umbrs-activity, umbrs-activity-journal, umbrs-activity-session-osc, umbrs-activity-notify]
@@ -40,7 +58,8 @@ That changes the most useful first delivery from broad service packaging to
 
 This proposal refines [the service brainstorm](service0.gpt6a.md). Its separate
 canonical-JSON-payload recommendation is superseded by the field-first proposal
-below. Exact fields and additional event policies remain open to discussion.
+below. The user subsequently selected **accepted identities plus metadata updates**;
+the exact fields remain proposed.
 No new implementation is claimed here. The five-second default is already done.
 
 ## How complete is the current tracker?
@@ -63,7 +82,7 @@ packaged CLI with flags and history commands.
 | Source/task shutdown | Library awaits actual cleanup; example calls it on ordinary loop error exit | Signal handling and output drain, medium-low priority |
 | Event output | `println!` and `eprintln!` | Tracing events/layers: highest-value start |
 | History, journal, notify, OSC | Not implemented by the example | Ticketed integrations |
-| Title changes after acceptance | Reducer refreshes internal metadata but emits no new episode | Decide if another event policy is desired |
+| Title changes after acceptance | Reducer refreshes internal metadata but emits no new episode | Add selected metadata-update events |
 
 Reconnect is **bounded fixed-delay transport/EOF recovery**, not a general
 exponential-backoff policy, initial-start retry, protocol-error recovery or observer
@@ -114,7 +133,7 @@ Every data event:
 | Field | Meaning |
 |---|---|
 | `schema_version` | Integer, initially 1 |
-| `event` | Stable kind such as `activity.accepted`, `source.gap`, `source.epoch`, `source.ready` |
+| `event` | Stable kind such as `activity.accepted`, `activity.metadata`, `source.gap`, `source.epoch`, `source.ready` |
 | `run_id` | Unique producer run identity; preserved during history export |
 | `seq` | Increasing sequence for data events in that run, across activity/session targets |
 | `event_time` | Original application event time, UTC RFC 3339 |
@@ -156,6 +175,36 @@ This is not an interval-end record. A briefly visited B that fails the dwell doe
 not establish continuous time spent on the last accepted A. If exact boundaries
 matter, add an immediate transition stream deliberately.
 
+### Selected addition: metadata after acceptance
+
+The user selected accepted identity **and** metadata updates, rather than adding
+the unfiltered identity-transition stream. Proposed semantics:
+
+- `activity.accepted` is emitted once after the candidate satisfies dwell, with
+  the latest complete selected metadata, as today.
+- `activity.metadata` is emitted when title, app ID, workspace ID or scratchpad
+  changes while the **same current candidate remains accepted**. It carries the
+  full updated metadata projection and `accepted_seq`, referring to the acceptance
+  event's `seq` within the same `run_id`. It has its own event sequence/time.
+- Identical selected metadata, geometry changes and timer ticks produce no metadata
+  event. Pre-acceptance metadata churn is folded into the eventual acceptance.
+- Metadata emission has no additional five-second delay. It preserves the episode's
+  original `since_mono_ms`; `last_observed_mono_ms` reflects the new valid census.
+- Observing a different identity, known absence, gap or invalid input immediately
+  ends eligibility to emit metadata for that accepted episode. Returning A after
+  A-B-A needs a fresh dwell/acceptance even if B never qualified. Do not keep
+  updating the last *reported* A across an unaccepted B or unknown period.
+- History may start after the acceptance or lose it to retention. The full metadata
+  event remains interpretable; the reference does not fabricate missing acceptance.
+
+Prefer a typed metadata-change outcome from the existing reducer (or an equivalent
+unified change interface) over a second consumer-owned continuity machine. The
+application attaches `accepted_seq` and output context; the pure reducer decides
+which candidate qualifies and whether selected metadata changed. This is a small
+new capability, unlike the already implemented foreground loop and reconnect.
+Verification should cover no-op/geometry-only changes, churn before acceptance,
+one changed census, A-B-A, known absence and source invalidation.
+
 ## Projections are layers
 
 **JSONL/NDJSON:** use tracing-subscriber's existing JSON formatter, with aliases
@@ -180,8 +229,9 @@ to be machine-compatible logfmt.
 **OSC 3008/7501:** a session event target and dedicated tracing layer/formatter
 for the actual terminal protocol. The same session event can also reach journal
 and JSON as structured data. Exact payloads, session identifiers, framing,
-terminators, destination and capabilities must follow the user's existing protocol
-work recovered by FX. Do not invent wire syntax from the OSC numbers. JSON text
+terminators, destination and capabilities must follow the protocol references
+[recovered by FX](prior-art0.glm53fx.md#osc-3008--upstream-systemd-implementation).
+Do not invent wire syntax from the OSC numbers. JSON text
 escaping an OSC string and a terminal writer transmitting control bytes are
 different projections; decide which are wanted. Ticket: `umbrs-activity-session-osc`.
 
@@ -223,15 +273,42 @@ reading versus journalctl streaming remains open pending FX's reuse research.
    that design** (interpretation of the user's requested AM -> XH handoff). The
    notify ticket records the sequencing; no dependent agent has been dispatched yet.
 
-Questions worth settling with the user:
+Remaining questions worth settling with the user:
 
-- Keep accepted-identity events as the default, or also emit post-acceptance title/
-  workspace updates? Current behavior is accepted identity only.
 - Are OSC outputs wanted as actual terminal control bytes, structured logged
   protocol data, or both? The architecture supports both without two producer paths.
 - Does the stock tracing JSON envelope fit the consumers? It is the lowest-cost
   start; a custom flattened envelope is only worthwhile for a concrete consumer.
 
-The [design index](../index.md) links the ongoing thread. FX's separate reuse
-research will supply local journald and hidden-document precedents; it can refine
-these choices without changing the selected tracing-first direction.
+## Verified local reuse from FX's survey
+
+The [hidden-aware survey](prior-art0.glm53fx.md) searched normal and hidden design/
+doc homes. The parent checked these particularly relevant findings against code:
+
+- [cyclrs journal dispatch](file:///home/rektide/src/cyclrs/telemetry/journald/src/dispatch.rs)
+  constructs raw tracing events and submits to an explicit private Dispatch,
+  bypassing host diagnostic/macro gates. Its existing test checks fields with
+  diagnostics disabled. This is an available technique if compile-time filtering
+  independence is required; choose it deliberately alongside layer composition.
+- [cyclrs reader](file:///home/rektide/src/cyclrs/source/journald/README.md) supplies
+  working patterns for exact cursor validation, finite upper cuts and byte budgets.
+  Its reader is a thread-local libsystemd handle; use an owning worker if composed
+  with async tracking. The crate is coupled to Cyclrs event/feed types: reuse or
+  extract the mechanisms deliberately rather than assume a drop-in dependency.
+- [cyclrs recorder](file:///home/rektide/src/cyclrs/telemetry/journald/README.md)
+  adds full-event readback visibility to stock tracing-journald. That is useful
+  precedent, but mandatory per-event readback is not selected for this activity
+  observer. Its canonical JSON envelope also need not become our field schema.
+- [systemd OSC context](file:///home/rektide/src/systemd/src/shared/osc-context.c)
+  implements 3008 and includes **service**, session and other context types.
+  Choose context matching the actual producer/subject rather than equating a
+  compositor window, shell session and application run.
+- [term-preserver's protocol brief](file:///home/rektide/src/term-preserver/design/tracking/osc-protocols.glm53m.md#osc-7501--program-status-protocol)
+  is research, not an emitter. Its 7501 replacement/lifetime semantics require a
+  terminal destination and mapping of actual program status. Window activation
+  alone does not establish `working`, `blocked`, or `done`. The detached-service
+  projection still needs a concrete terminal-facing consumer; recording structured
+  session facts can precede that transport choice.
+
+The [design index](../index.md) connects the proposal and research. No cross-project
+code was imported and no journal/OSC runtime integration was implemented here.

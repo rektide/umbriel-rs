@@ -5,11 +5,11 @@ description: Progressive navigation to current architecture, protocol evidence, 
 resource: design/index.md
 status: current
 generated:
-  at: 2026-10-18
+  at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
-    title: Link activity-service planning and the tracing-first record contract and capability reassessment
+    title: Link activity planning, selected metadata updates, tracing-first records and the reviewed hidden-aware prior-art survey
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
     title: Add the native layout-control requirements and cross-repository composition entry point
   - resource: opencode://ses_ec6abcf49ffeYEap9Wyro4UT12
@@ -44,7 +44,10 @@ sources:
   `umbrs-activity`; only the five-second default is commissioned immediately.
   [Tracing-native records and capability inventory](activity/records0.gpt6a.md)
   refines the delivery order around the selected tracing-journald architecture,
-  structured fields, JSON/logfmt/OSC layers and an AM-to-XH notify handoff.
+  structured fields, selected metadata updates, JSON/logfmt/OSC layers and an
+  AM-to-XH notify handoff. [Prior journald/tracing/OSC work](activity/prior-art0.glm53fx.md)
+  surveys normal and hidden design/doc homes, identifying Cyclrs's implemented
+  journal write/read mechanisms and the OSC protocol precedents.
 - [Layout-control needs — Longcat, Umbriel and Kubeless](layout-control/longcat-needs0.gpt6a.md):
   the implemented consumer's missing native facts and operations; separates
   compositor changes from Rust-library ergonomics and Kubeless mechanisms.
