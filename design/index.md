@@ -8,6 +8,8 @@ generated:
   at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_e9b39b353ffe32xtHZa0jZA7F3
+    title: Added the Noctalia shell capabilities research entry to the layout-control listing
   - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
     title: Connect refreshed upstream layout-control evidence with the existing consumer requirements
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
@@ -63,6 +65,10 @@ sources:
   Compares observation-first, conditional group sizing and native reversible
   tokens, with owner-specific landing steps and acceptance evidence. Scheduler
   fairness stays deferred; none of these proposals is an implemented protocol.
+  [Noctalia shell capabilities](layout-control/noctalia0.glm53max.md) surveys
+  the other major Umbriel IPC consumer: the v5 shell's control path, its
+  absent core layout control, the official companion plugin that does layout
+  control over the same wire, and the services Noctalia itself exports.
 
 ## Protocol and implementation evidence
 
