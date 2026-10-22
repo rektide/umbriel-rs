@@ -43,6 +43,9 @@ sources:
 - [Current upstream layout-control refresh](layout-control/upstream-refresh0.gpt6a.md):
   archive update, newly exported scrolling membership and output state, and the
   remaining focused-sizing and conditional-restoration gaps.
+- [Current Longcat implementation and control requirements](layout-control/longcat-current0.glm53m.md):
+  episode/restoration semantics, the working niri precedent, newly usable Umbriel
+  membership observations, and remaining axis, tab-unit and actuation decisions.
 
 - [Activity service and journal replay](activity/service0.gpt6a.md): foreground
   user-service proposal, notify/watchdog crate choices, structured journal records,
