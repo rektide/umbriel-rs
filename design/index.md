@@ -11,7 +11,7 @@ sources:
   - resource: opencode://ses_e9b39b353ffe32xtHZa0jZA7F3
     title: Added the Noctalia shell capabilities research entry to the layout-control listing
   - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
-    title: Connect refreshed upstream layout-control evidence with the existing consumer requirements
+    title: Connect refreshed upstream and consumer research, then foreground practical relative sizing after the human rejects exact-restoration gating
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
     title: Link activity planning, selected metadata updates, tracing-first records and the reviewed hidden-aware prior-art survey
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
@@ -41,6 +41,10 @@ sources:
   delivery-cell proposals preceding the selected publication-first implementation.
 
 ## Consumer requirements and proposed next work
+
+- [Practical relative sizing now](layout-control/practical-sizing0.gpt6a.md):
+  existing focused share setters, nudges, native sibling redistribution and edge
+  controls; a simpler adaptation that does not require exact Longcat restoration.
 
 - [Current upstream layout-control refresh](layout-control/upstream-refresh0.gpt6a.md):
   archive update, newly exported scrolling membership and output state, and the

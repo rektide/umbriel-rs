@@ -9,7 +9,7 @@ generated:
   by: model:openai/gpt-6.1-sol#high
 sources:
   - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
-    title: Qualify older protocol coverage against refreshed upstream layout observations and control limitations
+    title: Qualify protocol coverage against refreshed upstream and surface existing practical relative sizing independently of exact restoration
   - resource: opencode://ses_eaf7cba09ffe6roChmdCMdpIpd
     title: Raise the default stable-active dwell from 750 ms to 5 s across reducer default, example, and usage guides
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
@@ -340,6 +340,10 @@ changing semantics; it makes no throughput claim. Library code forbids unsafe;
 the allocation benchmark uses a forwarding allocator only for measurement.
 
 ## Design and next opportunities
+
+- [Practical relative sizing now](design/layout-control/practical-sizing0.gpt6a.md)
+  — existing Rust setters and nudges can resize the focused area today; native
+  layout logic redistributes sibling space. Exact restoration is a separate goal.
 
 - [Layout-control needs: Longcat, Umbriel and Kubeless](design/layout-control/longcat-needs0.gpt6a.md)
   — exact topology/sizing observations, explicit-target and conditional writes,
