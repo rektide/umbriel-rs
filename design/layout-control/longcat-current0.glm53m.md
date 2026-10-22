@@ -5,6 +5,10 @@ description: Source-grounded account of the implemented zooming-kittens Longcat 
 resource: design/layout-control/longcat-current0.glm53m.md
 status: draft
 generated: { at: 2026-10-22, by: 'model:zai-coding-plan/glm-5.3#max' }
+revisions:
+  - at: 2026-10-22
+    by: model:zai-coding-plan/glm-5.3#max
+    note: revision 1 corrects the axis account after parent review — workspace axis vs strip direction naming, secondary-stacking parallelism, strip/stacking labels in the corroboration option, and the conditionality of dry-run episodes under the strict Reported bridge; original preserved in change c1911970
 sources:
   - resource: opencode://ses_e9b37f9f4ffew5DLMbSfKMx1Fv
     title: Longcat implementation research against refreshed upstream Umbriel, bridge contract extraction and adapter gap assessment
@@ -44,10 +48,18 @@ sources:
     title: Current documented window, workspace, output payload and event family semantics
   - resource: file:///home/rektide/archive/noctalia-dev/umbriel-upstream/docs/user/actions.md
     title: Trailing-window-id argument precedent on window-move-to and window-move-by
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel-upstream/docs/user/workspaces.md
+    title: Workspace axis setting, values and scrolling arrangement consequences used for the revision 1 correction
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel-upstream/docs/user/outputs.md
+    title: Output-level workspace_axis configuration key and default
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel-upstream/src/config/resolve.cpp
+    title: Strip direction resolved from the output workspace axis, not a user scrolling key
+  - resource: file:///home/rektide/archive/noctalia-dev/umbriel-upstream/src/config/config.h
+    title: Resolved scrolling direction default and axis-agnostic state preservation comment
   - resource: file:///home/rektide/src/zooming-kittens/design/umbriel/investigation0.glm53max.md
     title: Earlier source-grounded restoration algebra and focus-race analysis checked against current sources
 verification:
-  method: Read the implemented Longcat core, bridge, control, runner and CLI sources in full or in relevant part; read the refreshed upstream compositor sources and docs at 5d657581; compared against the current Rust protocol models and zk adapters.
+  method: Read the implemented Longcat core, bridge, control, runner and CLI sources in full or in relevant part; read the refreshed upstream compositor sources and docs at 5d657581; compared against the current Rust protocol models and zk adapters. Revision 1 re-verified the axis chain against workspaces.md, outputs.md, config.h and resolve.cpp after parent review.
   limits: Source research only. No compositor was running or queried, no builds or tests were executed, and the cited zooming-kittens test counts are its documents' reported 2026-10-15 evidence, not re-verified here. No implementation is authorized by this document.
 ---
 
@@ -195,8 +207,8 @@ Against the bridge contract, at 5d657581:
 
 | Bridge requirement | Current native fact | Assessment |
 |---|---|---|
-| Reported membership and order | `windows` reports zero-based `column`/`row` for scrolling workspaces (`-1` otherwise) | **Closable now**: group by column within workspace, order by row, with the same unambiguous-and-fully-located discipline niri uses. Indices are positional — acceptable for the same reason niri's are |
-| Reported vertical secondary axis | Not exposed; scrolling `direction` is config (`vertical` default, `horizontal` lanes) | **Still open** — the one remaining observation blocker; see below |
+| Reported membership and order | `windows` reports zero-based `column`/`row` for scrolling workspaces (`-1` otherwise) | **Closable now for membership alone**: group by column within workspace, order by row, with the same unambiguous-and-fully-located discipline niri uses. Indices are positional — acceptable for the same reason niri's are. Episodes remain gated by the axis row below |
+| Reported vertical secondary axis | Not exposed. The axis chain is config-owned: per-output `workspace_axis` (`"vertical"` default / `"horizontal"`, `docs/user/workspaces.md#workspace-axis`) resolves to the strip `direction` (`src/config/resolve.cpp:499-501`) — strip perpendicular to the workspace axis, in-column stacking parallel to it. Longcat's vertical stacking therefore means `workspace_axis = "vertical"` (horizontal strip, columns left to right) | **Still open — the one remaining observation blocker**; the strict `Reported` bridge stays closed until a native field, an externally supplied axis, or a deliberate evidence-policy change lands (see below) |
 | Committed content extents | `w`/`h` are `committedContentBox()`; `x`/`y` are now content-box positions from the **previewed pending arrangement** (`previewArrangedLayout` when `arrangePending`), not a stale animated target | Satisfied; positions additionally corroborate order/gaps without being an identity |
 | Workspace output | `windows` entry `output` plus the workspaces entry | Satisfied directly (previously only inferrable) |
 | Decoration/span context | No tile size or group bounds | Skipped by design (`None` compatible); acceptable, weaker context |
@@ -236,19 +248,46 @@ whether to collapse a unit to its shown tab as a single member.
 
 ### Axis
 
-The strip axis is config-owned and unexposed. Options, in rising upstream cost:
+The exact chain at 5d657581: the user-facing setting is the **output's
+workspace axis** (`workspace_axis`, `[output.<name>]`, `"vertical"` default /
+`"horizontal"`; `docs/user/workspaces.md:72-87`, `docs/user/outputs.md:81`).
+`ResolvedLayoutConfig.scrolling.direction` is not a documented user key — it is
+**computed** from the output's axis at resolve time
+(`src/config/resolve.cpp:499-501`; `src/config/config.h:159-160`), and it names
+the **strip**: `ScrollingDirection::Vertical` means lanes running top to
+bottom, so `ScrollingLayout::vertical()` means a vertical strip, not vertical
+stacking. The strip runs perpendicular to the workspace axis and the
+in-column/in-lane stacking (the secondary extent Longcat resizes) runs parallel
+to it. Longcat's required vertical stacking is therefore the **default**
+arrangement: `workspace_axis = "vertical"` → horizontal strip, columns left to
+right, windows stacking top to bottom. Nothing in `src/server/ipc_commands.cpp`
+exposes any of this.
 
-1. **Geometry corroboration**: with reported column/row plus content
-   positions, members sharing `x` confirm a vertical strip; sharing `y`
-   confirms horizontal. This is inference, and the bridge currently refuses
-   inferred facts — but it corroborates a *reported-direction assumption*
-   rather than fabricating membership. It would still be a policy decision to
-   accept it, ideally recorded as a distinct evidence level in the desktop
-   model rather than conflated with `Evidence::Reported`.
-2. **Upstream field**: `direction` (or primary/secondary axis) in the
-   workspaces payload — a one-field addition that removes the ambiguity. This
-   is the cheap, correct ask and pairs naturally with any extent-write
-   proposal.
+Because the bridge demands a *reported* axis, dry-run planning stays closed
+under current native facts. Three ways out, in rising consumer-side compromise:
+
+1. **Upstream field**: expose the output's `workspace_axis` (or equivalently
+   the strip direction / secondary axis) in the `outputs` payload — the axis is
+   an output property, so the outputs family is its natural home. One field
+   removes the ambiguity authoritatively and pairs naturally with any
+   extent-write proposal. The cheap, correct ask.
+2. **Externally supplied axis**: the adapter accepts an operator-declared
+   per-output workspace axis as an explicit configuration input — a policy
+   fact the consumer owns, never mistaken for native evidence. Admission then
+   still rests on native column/row membership plus geometry.
+3. **Geometry corroboration, as an evidence-policy change**: with reported
+   column/row plus content positions, members of a column sharing `x`
+   corroborate vertical **stacking** (horizontal strip — the Longcat case);
+   sharing `y` corroborates horizontal stacking (vertical strip — reject).
+   Sharing is evidence of this snapshot's **arrangement**, not proof of the
+   configured axis. A policy accepting it must be recorded as a distinct
+   evidence level in the desktop model (never conflated with
+   `Evidence::Reported`), and must **reject rather than assume** the uncertain
+   cases: solo columns have no sibling sharing to check, and columns with
+   missing or inconsistent positions cannot corroborate anything. The bridge
+   currently refuses inferred facts outright; using corroboration is a
+   deliberate weakening of that rule, not an automatic consequence of the new
+   fields.
 
 ### Old servers and absent fields
 
@@ -263,18 +302,22 @@ payload shape, not the library version.
 
 ## What is now possible; next coherent slices
 
-1. **Observation upgrade (Rust-only, no upstream work).** Extend
-   `umbriel-protocol` models with the new windows/workspaces fields and
-   outputs family; extend `zk-umbriel`'s reducer from `group: None` to
-   reported scrolling groups built from column/row with niri's
-   unambiguity discipline, excluding tabbed columns, gating on axis policy
-   (geometry-corroborated vertical or unsupported). Result: `zk longcat
-   --backend umbriel --dry-run` produces **real episodes with real baselines
-   and preview decisions** instead of an unsupported planning result. Writes
-   remain correctly refused. Evidence: scripted-peer replay tests plus a
-   read-only live capture.
-2. **Upstream asks, re-prioritized.** (a) axis/direction in the workspaces
-   payload — tiny, unblocks authoritative admission; (b) by-ID secondary
+1. **Observation upgrade (Rust-only, no upstream work) — conditional for
+   episodes.** Extend `umbriel-protocol` models with the new windows/workspaces
+   fields and outputs family; extend `zk-umbriel`'s reducer from `group: None`
+   to reported scrolling groups built from column/row with niri's
+   unambiguity discipline, excluding tabbed columns. Membership reporting alone
+   is unconditional Rust work. **Dry-run episodes are not**: the existing
+   bridge admits a group only on a *reported* vertical secondary axis, so
+   `zk longcat --backend umbriel --dry-run` keeps emitting its unsupported
+   planning result until one of the three axis paths above lands — a native
+   `workspace_axis` field, an externally supplied axis, or an explicit
+   evidence-policy change accepting corroborated arrangement. Only then does
+   dry-run produce real episodes with real baselines and preview decisions.
+   Writes remain correctly refused either way. Evidence: scripted-peer replay
+   tests plus a read-only live capture.
+2. **Upstream asks, re-prioritized.** (a) the output's `workspace_axis` in the
+   outputs payload — tiny, unblocks authoritative admission; (b) by-ID secondary
    extent, ideally pixel-targeted, following the `window-move-to` trailing-id
    precedent — proves targeting without focus/reveal side effects but is
    explicitly *not* group restoration (the clamps, floor, edge-gap and
