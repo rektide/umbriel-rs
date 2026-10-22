@@ -208,7 +208,7 @@ impl Inventory {
         }
     }
 
-    fn statuses(&mut self) -> [&mut Status; 7] {
+    fn statuses(&mut self) -> [&mut Status; Family::ALL.len()] {
         [
             &mut self.windows.status,
             &mut self.workspaces.status,

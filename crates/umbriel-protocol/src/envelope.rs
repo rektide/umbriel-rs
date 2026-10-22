@@ -9,7 +9,8 @@ use sonic_rs::LazyValue;
 
 use crate::codec;
 
-/// The six families observed in Umbriel 0.1.x, not a negotiated capability list.
+/// Baseline families plus the opt-in conditional layout extension. This is not a
+/// negotiated capability list: older servers reject the layout-state family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     Theme,

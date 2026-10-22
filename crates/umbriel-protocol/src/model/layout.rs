@@ -26,6 +26,7 @@ pub enum SecondaryAxis {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutConstraints {
+    /// Bounds are native tile dimensions; height bounds already include title bar.
     pub min_width: i32,
     pub min_height: i32,
     pub max_width: i32,
@@ -49,6 +50,7 @@ pub struct LayoutMember {
 pub struct LayoutBasis {
     pub instance: String,
     pub workspace: String,
+    pub output: String,
     pub column: i32,
     pub axis: SecondaryAxis,
     pub members: Vec<LayoutMember>,

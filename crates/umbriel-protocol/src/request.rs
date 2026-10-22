@@ -76,7 +76,7 @@ impl Serialize for Request<'_> {
                     || weights.top < 0.0
                     || !weights.bottom.is_finite()
                     || weights.bottom < 0.0
-                    || weights.rows.iter().any(|w| !w.is_finite() || *w < 0.05)
+                    || weights.rows.iter().any(|w| !w.is_finite() || *w <= 0.0)
                     || !(weights.rows.iter().sum::<f64>() + weights.top + weights.bottom)
                         .is_finite()
                     || allocation

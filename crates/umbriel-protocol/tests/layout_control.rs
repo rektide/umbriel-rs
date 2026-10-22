@@ -7,7 +7,7 @@ use umbriel_protocol::{
 
 fn basis() -> LayoutBasis {
     codec::decode(br#"{
-      "instance":"native-run","workspace":"HEADLESS-1:1","column":0,"axis":"vertical",
+      "instance":"native-run","workspace":"HEADLESS-1:1","output":"HEADLESS-1","column":0,"axis":"vertical",
       "members":[{"id":"window","title_bar_height":0,"constraints":{"min_width":1,"min_height":1,"max_width":0,"max_height":0},"fullscreen":false,"maximized":false,"maximized_to_edges":false,"floating":false}],
       "weights":{"rows":[1.0],"top":0.0,"bottom":0.0},
       "area":{"x":0,"y":0,"width":1280,"height":720},"edge_pad":10,"gap":12,
@@ -55,7 +55,7 @@ fn allocation_encodes_complete_basis_and_native_restore_weights() {
 
 #[test]
 fn invalid_allocation_never_encodes_as_null_or_partial_valid_request() {
-    for row in [f64::NAN, f64::INFINITY, -1.0, 0.0, 0.049] {
+    for row in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
         let allocation = LayoutAllocation {
             target: "window".into(),
             expected: basis(),
@@ -69,6 +69,19 @@ fn invalid_allocation_never_encodes_as_null_or_partial_valid_request() {
         };
         assert!(allocation.request().encode(&mut Vec::new()).is_err());
     }
+    // Native tab dissolution may produce a raw weight below the effective floor.
+    let restore = LayoutAllocation {
+        target: "window".into(),
+        expected: basis(),
+        weights: LayoutWeights {
+            rows: vec![0.025],
+            top: 0.0,
+            bottom: 0.0,
+        },
+        expected_active: None,
+        target_content_extents: None,
+    };
+    restore.request().encode(&mut Vec::new()).unwrap();
 }
 
 #[test]

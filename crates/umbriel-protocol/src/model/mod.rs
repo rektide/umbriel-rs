@@ -1,4 +1,6 @@
 //! Owned payloads for Umbriel at compositor revision `7666af0`.
+//! [`LayoutState`] and its allocation types describe the separately opt-in native
+//! conditional scrolling extension; older servers do not implement it.
 //!
 //! Query results describe the value inside `ok`, not the envelope. Known event
 //! families are complete replacement snapshots, not deltas. Additional fields

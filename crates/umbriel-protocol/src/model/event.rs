@@ -7,7 +7,7 @@ use crate::{
 
 use super::{KeyboardLayouts, Overview, Submap, Theme, Windows, Workspaces};
 
-/// Owned payloads for all six current event families.
+/// Owned payloads for baseline families and the conditional layout extension.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     // Keep the infrequent theme snapshot from inflating every window event.
