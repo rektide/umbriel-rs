@@ -69,7 +69,7 @@ pub struct Status {
     pub epoch: u64,
     pub health: Health,
     /// Readiness is historical envelope evidence in this epoch, not payload validation.
-    pub families: [FamilyStatus; 6],
+    pub families: [FamilyStatus; Family::ALL.len()],
     pub last_end: Option<Terminal>,
 }
 impl Status {

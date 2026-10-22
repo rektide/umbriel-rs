@@ -189,6 +189,7 @@ pub struct Inventory {
     overview: Relation<(), Overview>,
     keyboard: Relation<(), KeyboardLayouts>,
     submap: Relation<(), Submap>,
+    layout: Relation<(), LayoutState>,
 }
 
 impl Inventory {
@@ -203,10 +204,11 @@ impl Inventory {
             overview: Relation::new(),
             keyboard: Relation::new(),
             submap: Relation::new(),
+            layout: Relation::new(),
         }
     }
 
-    fn statuses(&mut self) -> [&mut Status; 6] {
+    fn statuses(&mut self) -> [&mut Status; 7] {
         [
             &mut self.windows.status,
             &mut self.workspaces.status,
@@ -214,6 +216,7 @@ impl Inventory {
             &mut self.overview.status,
             &mut self.keyboard.status,
             &mut self.submap.status,
+            &mut self.layout.status,
         ]
     }
 
@@ -253,6 +256,7 @@ impl Inventory {
             Family::Overview => &mut self.overview.status,
             Family::KeyboardLayout => &mut self.keyboard.status,
             Family::Submap => &mut self.submap.status,
+            Family::LayoutState => &mut self.layout.status,
         }
     }
 
@@ -264,6 +268,7 @@ impl Inventory {
             Family::Overview => self.overview.status,
             Family::KeyboardLayout => self.keyboard.status,
             Family::Submap => self.submap.status,
+            Family::LayoutState => self.layout.status,
         }
     }
 
@@ -357,6 +362,10 @@ impl Inventory {
                 .submap
                 .replace(stamp, vec![((), value)], false)
                 .map(|_| None),
+            Event::LayoutState(value) => self
+                .layout
+                .replace(stamp, vec![((), *value)], false)
+                .map(|_| None),
         }
     }
 
@@ -371,6 +380,7 @@ impl Inventory {
             overview: self.overview.snapshot(),
             keyboard: self.keyboard.snapshot(),
             submap: self.submap.snapshot(),
+            layout: self.layout.snapshot(),
         }
     }
 }
@@ -385,6 +395,7 @@ pub struct Snapshot {
     pub overview: FamilySnapshot<(), Overview>,
     pub keyboard: FamilySnapshot<(), KeyboardLayouts>,
     pub submap: FamilySnapshot<(), Submap>,
+    pub layout: FamilySnapshot<(), LayoutState>,
 }
 
 #[derive(Debug, Clone)]

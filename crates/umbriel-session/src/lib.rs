@@ -190,8 +190,8 @@ struct Slot {
 pub struct Session {
     role: Role,
     phase: Phase,
-    declared: [bool; 6],
-    observed: [bool; 6],
+    declared: [bool; Family::ALL.len()],
+    observed: [bool; Family::ALL.len()],
     outbound: Vec<u8>,
     slot: Option<Slot>,
     last_request_id: u64,
@@ -224,8 +224,8 @@ impl Session {
         Self {
             role: Role::OneShot,
             phase: Phase::Fresh,
-            declared: [false; 6],
-            observed: [false; 6],
+            declared: [false; Family::ALL.len()],
+            observed: [false; Family::ALL.len()],
             outbound: Vec::new(),
             slot: None,
             last_request_id: 0,
@@ -418,7 +418,7 @@ impl Session {
             }
             Message::Blank => {
                 if self.phase != Phase::Subscribing
-                    || self.declared != [false, false, true, false, false, false]
+                    || self.declared != [false, false, true, false, false, false, false]
                 {
                     return self.fail(ProtocolFailure::Unexpected(Unexpected::Blank));
                 }
@@ -575,6 +575,7 @@ const fn family_index(family: Family) -> usize {
         Family::Windows => 3,
         Family::Workspaces => 4,
         Family::Submap => 5,
+        Family::LayoutState => 6,
     }
 }
 

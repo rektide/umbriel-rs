@@ -142,7 +142,7 @@ fn query_only_results_have_complete_nested_schemas() {
 }
 
 #[test]
-fn all_six_events_route_to_the_correct_owned_payload() {
+fn all_events_route_to_the_correct_owned_payload() {
     for (family, payload) in [
         (Family::Theme, THEME),
         (Family::Overview, OVERVIEW),
@@ -150,6 +150,10 @@ fn all_six_events_route_to_the_correct_owned_payload() {
         (Family::Windows, WINDOWS),
         (Family::Workspaces, WORKSPACES),
         (Family::Submap, SUBMAP),
+        (
+            Family::LayoutState,
+            r#"{"version":1,"instance":"native","active":null,"columns":[],"unsupported_workspaces":[]}"#,
+        ),
     ] {
         // Deliberately data-first, just like the pinned compositor.
         let frame = format!(r#"{{"data":{payload},"event":"{}"}}"#, family.as_str());
@@ -159,6 +163,11 @@ fn all_six_events_route_to_the_correct_owned_payload() {
         };
         assert_eq!(event.family(), family);
         match event {
+            Event::LayoutState(layout) => {
+                assert_eq!(layout.instance, "native");
+                assert!(layout.active.is_none());
+                roundtrip(&layout);
+            }
             Event::Theme(theme) => {
                 assert_eq!(theme.background, "#010203ff");
                 assert_eq!(theme.border.scratchpad_focused, "#445566ff");

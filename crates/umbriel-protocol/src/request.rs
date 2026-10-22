@@ -45,6 +45,7 @@ impl Query {
 /// grammar validation. Output mutations require a headless server at runtime.
 #[derive(Debug, Clone, Copy)]
 pub enum Request<'a> {
+    LayoutAllocate(&'a crate::model::LayoutAllocation),
     Query(Query),
     Msg(&'a str),
     Subscribe(&'a [Family]),
@@ -66,6 +67,40 @@ impl Request<'_> {
 impl Serialize for Request<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let (cmd, arg) = match self {
+            Self::LayoutAllocate(allocation) => {
+                let weights = &allocation.weights;
+                if allocation.target.is_empty()
+                    || weights.rows.len() != allocation.expected.members.len()
+                    || weights.rows.is_empty()
+                    || !weights.top.is_finite()
+                    || weights.top < 0.0
+                    || !weights.bottom.is_finite()
+                    || weights.bottom < 0.0
+                    || weights.rows.iter().any(|w| !w.is_finite() || *w < 0.05)
+                    || !(weights.rows.iter().sum::<f64>() + weights.top + weights.bottom)
+                        .is_finite()
+                    || allocation
+                        .target_content_extents
+                        .as_ref()
+                        .is_some_and(|extents| {
+                            extents.len() != weights.rows.len()
+                                || extents.iter().any(|extent| *extent <= 0)
+                        })
+                {
+                    return Err(serde::ser::Error::custom("invalid layout allocation"));
+                }
+                #[derive(Serialize)]
+                struct Wire<'a> {
+                    cmd: &'static str,
+                    #[serde(flatten)]
+                    allocation: &'a crate::model::LayoutAllocation,
+                }
+                return Wire {
+                    cmd: "layout-allocate",
+                    allocation,
+                }
+                .serialize(serializer);
+            }
             Self::Query(query) => (query.as_str(), None),
             Self::Msg(action) => ("msg", Some(*action)),
             Self::Subscribe(families) => {

@@ -8,7 +8,7 @@ use crate::{
 use super::{KeyboardLayouts, Overview, Submap, Theme, Windows, Workspaces};
 
 /// Owned payloads for all six current event families.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     // Keep the infrequent theme snapshot from inflating every window event.
     Theme(Box<Theme>),
@@ -17,6 +17,7 @@ pub enum Event {
     Windows(Windows),
     Workspaces(Workspaces),
     Submap(Submap),
+    LayoutState(Box<super::LayoutState>),
 }
 
 impl Event {
@@ -28,6 +29,7 @@ impl Event {
             Self::Windows(_) => Family::Windows,
             Self::Workspaces(_) => Family::Workspaces,
             Self::Submap(_) => Family::Submap,
+            Self::LayoutState(_) => Family::LayoutState,
         }
     }
 }
@@ -67,6 +69,7 @@ pub fn decode_event<'message, 'frame>(
         Family::Windows => Event::Windows(codec::decode(bytes)?),
         Family::Workspaces => Event::Workspaces(codec::decode(bytes)?),
         Family::Submap => Event::Submap(codec::decode(bytes)?),
+        Family::LayoutState => Event::LayoutState(Box::new(codec::decode(bytes)?)),
     };
     Ok(EventDecode::Known(event))
 }

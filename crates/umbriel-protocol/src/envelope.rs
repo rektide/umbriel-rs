@@ -18,16 +18,18 @@ pub enum Family {
     Windows,
     Workspaces,
     Submap,
+    LayoutState,
 }
 
 impl Family {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Theme,
         Self::Overview,
         Self::KeyboardLayout,
         Self::Windows,
         Self::Workspaces,
         Self::Submap,
+        Self::LayoutState,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -38,6 +40,7 @@ impl Family {
             Self::Windows => "windows",
             Self::Workspaces => "workspaces",
             Self::Submap => "submap",
+            Self::LayoutState => "layout-state",
         }
     }
 }
