@@ -17,6 +17,7 @@ clap = { version = "4", features = ["derive"] }
 [dev-dependencies]
 kubeless-view-impact = { path = "../../../kubeless/view/impact" }
 umbriel-state = { path = "../umbriel-state" }
+umbriel-tracking = { path = "../tracking" }
 tokio = { version = "1.48", features = ["io-util", "test-util", "rt-multi-thread"] }
 tempfile = "3"
 socket2 = "0.6"

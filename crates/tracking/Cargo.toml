@@ -1,0 +1,17 @@
+[package]
+name = "umbriel-tracking"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Reusable typed Umbriel observation and stable activity runtime"
+
+[dependencies]
+umbriel-client = { path = "../umbriel-client" }
+umbriel-protocol = { path = "../umbriel-protocol" }
+umbriel-state = { path = "../umbriel-state" }
+tokio = { version = "1.48", features = ["time", "macros", "rt"] }
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1.48", features = ["test-util", "io-util"] }
+tempfile = "3"

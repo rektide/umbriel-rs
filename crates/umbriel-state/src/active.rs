@@ -116,12 +116,18 @@ impl StableActiveReducer {
     /// A complete valid windows census. First data starts its dwell *now*.
     /// Same-ID metadata refreshes do not change the deadline, even after emission.
     pub fn observe(&mut self, epoch: u64, now: Duration, windows: &[Window]) -> Result<(), Error> {
+        self.observe_changes(epoch, now, windows).map(|_| ())
+    }
+
+    /// Return full metadata only when the same already-accepted candidate changes.
+    /// Geometry and pre-acceptance churn do not emit; invalidation ends eligibility.
+    pub fn observe_changes<'a>(&mut self, epoch: u64, now: Duration, windows: impl IntoIterator<Item = &'a Window>) -> Result<Option<StableActive>, Error> {
         self.time(now)?;
         if self.epoch != Some(epoch) {
             self.invalidate();
             self.epoch = Some(epoch);
         }
-        let mut active = windows.iter().filter(|window| window.active);
+        let mut active = windows.into_iter().filter(|window| window.active);
         let window = active.next();
         let error = if active.next().is_some() {
             Some(Error::MultipleActive)
@@ -137,11 +143,22 @@ impl StableActiveReducer {
         if let Some(candidate) = &mut self.candidate
             && candidate.window.as_ref().map(|w| &w.id) == window.map(|w| &w.id)
         {
+            let mut changed = false;
             if let (Some(record), Some(window)) = (&mut candidate.window, window) {
+                changed = record.title != window.title
+                    || record.app_id != window.app_id
+                    || record.workspace != window.workspace
+                    || record.scratchpad != window.scratchpad;
                 record.refresh(window);
             }
             candidate.last_observed = now;
-            return Ok(());
+            return Ok((changed && candidate.deadline.is_none()).then(|| StableActive {
+                epoch,
+                since: candidate.since,
+                last_observed: now,
+                emitted_at: now,
+                window: candidate.window.clone(),
+            }));
         }
         let Some(deadline) = now.checked_add(self.dwell) else {
             self.invalidate();
@@ -153,7 +170,7 @@ impl StableActiveReducer {
             last_observed: now,
             deadline: Some(deadline),
         });
-        Ok(())
+        Ok(None)
     }
 
     /// Timer-only progress is sufficient. Emits at most once per episode.

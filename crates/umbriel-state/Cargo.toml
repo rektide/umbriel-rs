@@ -7,4 +7,4 @@ description = "Optional observed inventories and clock-injected stable-active re
 
 [dependencies]
 umbriel-protocol = { path = "../umbriel-protocol" }
-kubeless-view-memory = { path = "../../../kubeless/view/memory", version = "=0.1.0" }
+kubeless-view-memory = { path = "../../../kubeless/view/memory", version = "=0.6.0" }

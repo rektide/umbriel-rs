@@ -3,11 +3,9 @@ use kubeless_view_impact::{affected_roots, visit_relations};
 use std::{error::Error, fmt::Write, time::Duration};
 use tokio::time::Instant;
 use umbriel_client::{Discovery, Observation, SubscriptionOptions};
-use umbriel_protocol::{
-    envelope::{Family, Message},
-    model::{Event, EventDecode, Window, decode_event},
-};
-use umbriel_state::inventory::{Inventory, Stamp, WindowChanges};
+use umbriel_protocol::{envelope::Family, model::Window};
+use umbriel_state::inventory::WindowChanges;
+use umbriel_tracking::{Tracker, Update};
 
 /// Empty references are not workspace identities. Nonempty references need not
 /// match a separately observed workspace census, so no existence is inferred.
@@ -45,10 +43,7 @@ fn report(mut installed: WindowChanges) -> String {
     .unwrap();
     // Equality is native full typed Window equality, not Arc identity or only
     // workspace membership. Keep the actual receipt's generation when filtering.
-    installed
-        .commit
-        .evidence
-        .retain(|row| row.before != row.after);
+    installed.commit.evidence.retain(|row| row.before != row.after);
     let changes = &installed.commit.evidence;
     let mut rows = changes.iter().collect::<Vec<_>>();
     rows.sort_by(|a, b| a.key.cmp(&b.key)); // display order, not compositor order
@@ -77,92 +72,36 @@ fn report(mut installed: WindowChanges) -> String {
         },
     );
     let roots = affected_roots(changes, |_, w| [relation(w)]);
-    writeln!(
-        out,
-        "affected relations (unordered): {:?}; changed windows={}",
-        roots.keys(),
-        changes.len()
-    )
-    .unwrap();
+    writeln!(out, "affected relations (unordered): {:?}; changed windows={}", roots.keys(), changes.len()).unwrap();
     out
 }
 
-fn observe(
-    inventory: &mut Inventory,
-    now: Duration,
-    observation: Observation,
-) -> Result<Option<String>, Box<dyn Error>> {
-    match observation {
-        Observation::Epoch { epoch } => {
-            inventory.begin_epoch(epoch)?;
-            Ok(Some(format!(
-                "epoch {epoch}: retained rows are stale; reacquiring"
-            )))
-        }
-        Observation::Gap { epoch, terminal } => {
-            inventory.gap();
-            Ok(Some(format!(
-                "epoch {epoch}: source gap {terminal:?}; no continuous history"
-            )))
-        }
-        Observation::Frame {
-            epoch,
-            position,
-            bytes,
-        } => {
-            let decoded =
-                Message::decode(&bytes).and_then(|message| match decode_event(&message)? {
-                    EventDecode::Known(Event::Windows(windows)) => Ok(Some(windows)),
-                    _ => Ok(None),
-                });
-            match decoded {
-                Ok(Some(windows)) => {
-                    let stamp = Stamp {
-                        epoch,
-                        position,
-                        observed_at: now,
-                    };
-                    match inventory.install_windows_changes(stamp, windows) {
-                        Ok(receipt) => Ok(Some(report(receipt))),
-                        Err(error) => Ok(Some(format!(
-                            "rejected census: {error}; {:?}",
-                            inventory.status(Family::Windows)
-                        ))),
-                    }
-                }
-                Ok(None) => Ok(None),
-                Err(error) => {
-                    // This subscription requests only windows; malformed frames
-                    // make that family's evidence stale, never a known-empty map.
-                    inventory.invalid_snapshot(Family::Windows);
-                    Ok(Some(format!(
-                        "decode gap: {error}; {:?}",
-                        inventory.status(Family::Windows)
-                    )))
-                }
-            }
-        }
+fn observe(tracker: &mut Tracker, now: Duration, observation: Observation) -> Result<Option<String>, Box<dyn Error>> {
+    match tracker.observe(now, observation) {
+        Update::Epoch { epoch } => Ok(Some(format!("epoch {epoch}: retained rows are stale; reacquiring"))),
+        Update::Gap { epoch, reason } => Ok(Some(format!("epoch {epoch}: source gap {reason}; no continuous history"))),
+        Update::Installed { windows: Some(receipt), .. } => Ok(Some(report(receipt))),
+        Update::Rejected { reason, .. } => Ok(Some(format!(
+            "decode gap/rejected census: {reason}; {:?}",
+            tracker.inventory().status(Family::Windows)
+        ))),
+        _ => Ok(None),
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let endpoint = Discovery::from_env().resolve()?;
-    let (source, mut observer) = endpoint
-        .subscribe(&[Family::Windows], SubscriptionOptions::default())
-        .await?;
+    let (source, mut observer) = endpoint.subscribe(&[Family::Windows], SubscriptionOptions::default()).await?;
     let origin = Instant::now();
-    let mut inventory = Inventory::new(0); // native source announces epoch 1
+    let mut inventory = Tracker::new(&[Family::Windows], true);
     let result = async {
         loop {
             let item = match observer.recv().await {
                 Ok(item) => item,
                 Err(error) => {
-                    inventory.gap();
-                    eprintln!(
-                        "observer ended/lost delivery: {error}; {:?}",
-                        inventory.status(Family::Windows)
-                    );
+                    inventory.lost();
+                    eprintln!("observer ended/lost delivery: {error}; {:?}", inventory.inventory().status(Family::Windows));
                     return Err(Box::<dyn Error>::from(error));
                 }
             };
@@ -218,17 +157,11 @@ mod tests {
             }
             let _ = wait.await; // do not turn pending frames into a transport loss
         });
-        let (source, mut observer) = Endpoint::new(path)
-            .subscribe(&[Family::Windows], SubscriptionOptions::default())
-            .await
-            .unwrap();
-        let mut inventory = Inventory::new(0);
+        let (source, mut observer) = Endpoint::new(path).subscribe(&[Family::Windows], SubscriptionOptions::default()).await.unwrap();
+        let mut inventory = Tracker::new(&[Family::Windows], true);
         let mut reports = Vec::new();
         while reports.len() < 6 {
-            let item = tokio::time::timeout(Duration::from_secs(5), observer.recv())
-                .await
-                .unwrap()
-                .unwrap();
+            let item = tokio::time::timeout(Duration::from_secs(5), observer.recv()).await.unwrap().unwrap();
             let is_frame = matches!(item, Observation::Frame { .. });
             let report = observe(&mut inventory, Duration::ZERO, item).unwrap();
             if is_frame {
@@ -255,46 +188,24 @@ mod tests {
     #[test]
     fn adapter_decode_failure_and_epoch_do_not_hide_retained_evidence() {
         use std::sync::Arc;
-        let mut inventory = Inventory::new(0);
-        observe(
-            &mut inventory,
-            Duration::ZERO,
-            Observation::Epoch { epoch: 1 },
-        )
-        .unwrap();
+        let mut inventory = Tracker::new(&[Family::Windows], true);
+        observe(&mut inventory, Duration::ZERO, Observation::Epoch { epoch: 1 }).unwrap();
         let item = |epoch, position, text: String| Observation::Frame {
             epoch,
             position,
             bytes: Arc::from(text.trim_end().as_bytes()),
         };
         observe(&mut inventory, Duration::ZERO, item(1, 1, frame("old", ""))).unwrap();
-        let failed = observe(
-            &mut inventory,
-            Duration::ZERO,
-            item(1, 2, "{\"event\":\"windows\",\"data\":null}".into()),
-        )
-        .unwrap()
-        .unwrap();
-        assert!(failed.contains("decode gap"));
-        assert!(failed.contains("InvalidSnapshot"));
-        let resumed = observe(&mut inventory, Duration::ZERO, item(1, 3, frame("new", "")))
+        let failed = observe(&mut inventory, Duration::ZERO, item(1, 2, "{\"event\":\"windows\",\"data\":null}".into()))
             .unwrap()
             .unwrap();
+        assert!(failed.contains("decode gap"));
+        assert!(failed.contains("InvalidSnapshot"));
+        let resumed = observe(&mut inventory, Duration::ZERO, item(1, 3, frame("new", ""))).unwrap().unwrap();
         assert!(resumed.contains("baseline/reacquired"));
         assert!(resumed.contains("Workspace(\"old\")"));
-        observe(
-            &mut inventory,
-            Duration::ZERO,
-            Observation::Epoch { epoch: 2 },
-        )
-        .unwrap();
-        let reacquired = observe(
-            &mut inventory,
-            Duration::ZERO,
-            item(2, 1, frame("next", "")),
-        )
-        .unwrap()
-        .unwrap();
+        observe(&mut inventory, Duration::ZERO, Observation::Epoch { epoch: 2 }).unwrap();
+        let reacquired = observe(&mut inventory, Duration::ZERO, item(2, 1, frame("next", ""))).unwrap().unwrap();
         assert!(reacquired.contains("EpochChanged"));
         assert!(reacquired.contains("baseline/reacquired"));
     }
