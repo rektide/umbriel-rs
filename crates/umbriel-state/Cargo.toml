@@ -3,8 +3,13 @@ name = "umbriel-state"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+rust-version.workspace = true
 description = "Optional observed inventories and clock-injected stable-active reduction"
+keywords = ["compositor", "ipc", "state"]
 
 [dependencies]
-umbriel-protocol = { path = "../umbriel-protocol" }
+umbriel-protocol = { path = "../umbriel-protocol", version = "0.1.0" }
 kubeless-view-memory = { path = "../../../kubeless/view/memory", version = "=0.6.0" }

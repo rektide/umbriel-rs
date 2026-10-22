@@ -6,3 +6,7 @@ resolver = "3"
 edition = "2024"
 version = "0.1.0"
 license = "MIT"
+authors = ["rektide <rektide+scm@voodoowarez.com>"]
+repository = "https://github.com/rektide/umbriel-rs"
+rust-version = "1.85"
+readme = "README.md"

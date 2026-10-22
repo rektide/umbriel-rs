@@ -3,11 +3,16 @@ name = "umbriel-client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+rust-version.workspace = true
 description = "Tokio Unix client and independently bounded Umbriel subscriptions"
+keywords = ["compositor", "ipc", "tokio", "subscription"]
 
 [dependencies]
-umbriel-protocol = { path = "../umbriel-protocol" }
-umbriel-session = { path = "../umbriel-session" }
+umbriel-protocol = { path = "../umbriel-protocol", version = "0.1.0" }
+umbriel-session = { path = "../umbriel-session", version = "0.1.0" }
 tokio = { version = "1.48", features = ["net", "rt", "sync", "time", "macros", "process", "io-util"] }
 serde = "1"
 sonic-rs = "0.5"

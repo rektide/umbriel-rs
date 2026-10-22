@@ -3,12 +3,17 @@ name = "umbriel-tracking"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+rust-version.workspace = true
 description = "Reusable typed Umbriel observation and stable activity runtime"
+keywords = ["compositor", "activity", "tracking"]
 
 [dependencies]
-umbriel-client = { path = "../umbriel-client" }
-umbriel-protocol = { path = "../umbriel-protocol" }
-umbriel-state = { path = "../umbriel-state" }
+umbriel-client = { path = "../umbriel-client", version = "0.1.0" }
+umbriel-protocol = { path = "../umbriel-protocol", version = "0.1.0" }
+umbriel-state = { path = "../umbriel-state", version = "0.1.0" }
 tokio = { version = "1.48", features = ["time", "macros", "rt"] }
 thiserror = "2"
 

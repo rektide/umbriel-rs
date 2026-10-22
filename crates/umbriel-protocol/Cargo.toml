@@ -3,7 +3,12 @@ name = "umbriel-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+rust-version.workspace = true
 description = "Sans-I/O Umbriel wire protocol and bounded NDJSON codec"
+keywords = ["compositor", "ipc", "protocol", "json"]
 
 [dependencies]
 memchr = "2.8.3"
