@@ -8,6 +8,8 @@ generated:
   at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
+    title: Connect refreshed upstream layout-control evidence with the existing consumer requirements
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
     title: Link activity planning, selected metadata updates, tracing-first records and the reviewed hidden-aware prior-art survey
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
@@ -37,6 +39,10 @@ sources:
   delivery-cell proposals preceding the selected publication-first implementation.
 
 ## Consumer requirements and proposed next work
+
+- [Current upstream layout-control refresh](layout-control/upstream-refresh0.gpt6a.md):
+  archive update, newly exported scrolling membership and output state, and the
+  remaining focused-sizing and conditional-restoration gaps.
 
 - [Activity service and journal replay](activity/service0.gpt6a.md): foreground
   user-service proposal, notify/watchdog crate choices, structured journal records,

@@ -6,6 +6,8 @@ resource: design/layout-control/longcat-needs0.gpt6a.md
 status: proposed
 generated: { at: 2026-10-17, by: 'model:openai/gpt-6-astra#high' }
 sources:
+  - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
+    title: Add current-upstream correction pointer while preserving the earlier requirements argument
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
     title: Longcat remake implementation, verified consumer findings, and human request to bring Umbriel requirements and cross-library compositions into umbriel-rs
   - resource: ../kubeless/handoff0.gpt6a.md
@@ -36,6 +38,12 @@ verification:
 ---
 
 # Layout-control needs
+
+**October 22 source update:** current upstream now exports scrolling `column`
+and `row`, tab metadata and output usable areas. The absence-of-membership claims
+below describe the older inspected revision. Read the
+[upstream refresh](upstream-refresh0.gpt6a.md) for the corrected observation
+boundary; the focused sizing and conditional-restoration gaps remain.
 
 ## Why this document exists here
 

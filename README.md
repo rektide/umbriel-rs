@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
+    title: Qualify older protocol coverage against refreshed upstream layout observations and control limitations
   - resource: opencode://ses_eaf7cba09ffe6roChmdCMdpIpd
     title: Raise the default stable-active dwell from 750 ms to 5 s across reducer default, example, and usage guides
   - resource: opencode://ses_ec3316eefffejmDBXbZ28spBd7
@@ -63,6 +65,13 @@ the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 The goal is a reusable **whole-protocol Rust library**, not just a delayed focus
 watcher. Small tools demonstrate concrete uses of that library; the desktop dump
 is also shipped as a normal Cargo binary.
+
+**Upstream coverage note (October 22):** the counts and capture limitations below
+describe this implementation's earlier protocol baseline. Current upstream adds
+scrolling column/row membership, tab metadata, native output query/events and more
+actions. Typed support has not yet caught up. See the
+[source refresh](design/layout-control/upstream-refresh0.gpt6a.md) for what is now
+available and why targeted, reversible tiled sizing still needs native API work.
 
 ## Run from the checkout
 
