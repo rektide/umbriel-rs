@@ -45,6 +45,8 @@ sources:
 - [Practical relative sizing now](layout-control/practical-sizing0.gpt6a.md):
   existing focused share setters, nudges, native sibling redistribution and edge
   controls; a simpler adaptation that does not require exact Longcat restoration.
+  [ZK implementation handoff](handoff/zk-focused-sizing0.gpt6a.md) identifies the
+  receiving consumer contract, existing builders, acceptance evidence and tracking.
 
 - [Current upstream layout-control refresh](layout-control/upstream-refresh0.gpt6a.md):
   archive update, newly exported scrolling membership and output state, and the
