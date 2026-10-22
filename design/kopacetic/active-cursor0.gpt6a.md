@@ -3,7 +3,7 @@ type: IntegrationDesign
 title: Optional Kopacetic live active cursor
 description: Source-grounded selection of a source-qualified live cursor and an isolated integration package.
 resource: /design/kopacetic/active-cursor0.gpt6a.md
-status: draft
+status: implemented
 generated:
   by: model:openai/gpt-6-astra
   at: 2026-10-22
@@ -22,6 +22,8 @@ sources:
     title: Faceted generic Entity, standalone identity and provenance
   - resource: file:///home/rektide/src/kopacetic/crates/kopacetic-rkyv/README.md
     title: Optional complete-snapshot backend and absence of liveness or watcher semantics
+  - resource: file:///home/rektide/src/zooming-kittens/design/longcat/umbriel-control-stream0.gpt6a.md
+    title: Coordinating research on stream composition and the separate immediate versus accepted activity contracts
 ---
 
 # Optional Kopacetic live active cursor
@@ -115,3 +117,52 @@ no Kubernetes dependency in the integration and no Kopacetic in the normal clien
 - [Kopacetic backend guide](file:///home/rektide/src/kopacetic/README.md)
   explains selectable materialization backends; this slice uses its common Entity
   boundary without selecting persistence, discovery or a registry protocol.
+
+## Implemented checkpoint and coordination
+
+The [integration guide](/integration/kopacetic-active/README.md) owns usage.
+Implementation is confined to `integration/kopacetic-active/`; no client/state,
+protocol, compositor or ZK source file is changed. This account and its sibling
+documents are the only owned research paths.
+
+The feed directly reuses `umbriel_client::Observer` and `Observation`, native
+epoch/gap handling and optional reconnect. It does not duplicate the private
+`next_stable` timer/drain loop. Its small immediate Windows decoding/selection
+adapter is needed because the stable reducer emits once per accepted identity
+and does not publish same-ID metadata changes. Reusing that delayed event stream
+would violate the cursor contract. A future common typed observation classifier
+from **umbrs-stream-tracking** is a useful dependency once available; it should
+carry decoded Windows data plus source/epoch/position and explicit invalidity,
+without imposing dwell or a Kopacetic dependency.
+
+The tracking/service implementer may own new runtime composition code and the
+existing active-window example, client/state and activity docs as appropriate.
+Avoid only this integration directory and `design/kopacetic/`. Keep immediate
+state and accepted activity as distinct public projections. No service or tracing
+work was taken by this integration.
+
+### Verification evidence
+
+On October 22, 2026:
+
+- `cargo check --manifest-path integration/kopacetic-active/Cargo.toml
+  --features active-cursor --all-targets`: passed.
+- Same manifest, `cargo nextest run --features active-cursor --locked`: **4 tests
+  passed**, covering actual Unix subscription/reconnect, cancellation, source
+  shutdown, coalescing, metadata and invalid/no-active states.
+- Same manifest, `cargo clippy --features active-cursor --all-targets --locked
+  -- -D warnings`: passed.
+- Same manifest, `cargo check --no-default-features --locked`: passed.
+- `cargo tree --edges normal --no-default-features --locked`: only the integration
+  package itself; zero normal dependencies.
+- Enabled normal dependency tree: core with no Kubernetes/Kubeless, no backend,
+  no Polars. Protocol/session/client compile as native dependencies.
+- Root client-only check was attempted and **blocked at dependency resolution**:
+  root `umbriel-state` pins `kubeless-view-memory = "=0.1.0"`, whereas the sibling
+  checkout now provides `0.6.0`. No source compilation failed. This unrelated
+  workspace pin was preserved and reported to the coordinating parent.
+
+The independent integration lockfile is committed. Default root feature-disabled
+verification cannot be called successful until that native dependency mismatch
+is resolved. No live compositor activation trial or persistence backend test is
+claimed; both are outside this in-memory, scripted-source slice.

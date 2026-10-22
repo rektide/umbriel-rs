@@ -1,0 +1,32 @@
+[package]
+name = "umbriel-kopacetic-active"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Deliberately independent of the primary workspace and its dependency graph.
+[workspace]
+
+[features]
+default = []
+active-cursor = ["dep:facet", "dep:kopacetic-core", "dep:tokio", "dep:umbriel-client", "dep:umbriel-protocol"]
+
+[dependencies]
+facet = { version = "=0.50.0-rc.5", optional = true }
+kopacetic-core = { path = "../../../kopacetic/crates/kopacetic-core", default-features = false, optional = true }
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "signal"], optional = true }
+umbriel-client = { path = "../../crates/umbriel-client", optional = true }
+umbriel-protocol = { path = "../../crates/umbriel-protocol", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+umbriel-session = { path = "../../crates/umbriel-session" }
+
+[[example]]
+name = "active_cursor"
+required-features = ["active-cursor"]
+
+[[test]]
+name = "live"
+required-features = ["active-cursor"]
