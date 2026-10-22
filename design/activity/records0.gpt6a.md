@@ -8,6 +8,8 @@ generated:
   at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
+    title: Link delivered tracing/tracking runtime and native service verification while preserving this proposal as predecessor evidence
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
     title: Human selection of tracing-native output and accepted identities plus metadata updates; capability reassessment, record shape and reviewed FX reuse findings
   - resource: service0.gpt6a.md
@@ -48,6 +50,11 @@ extensions:
 ---
 
 # Tracing-native activity records
+
+**Delivered continuation (October 22):** [runtime and deployment evidence](runtime0.gpt6a.md)
+and the [application contract](../../crates/activity/README.md) describe the now-running
+accepted-plus-metadata service and reusable tracking library. Historical capability
+statements below describe this proposal's earlier state; notify/history remain open.
 
 ## Direction selected; contract still being discussed
 

@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
+    title: Deliver reusable tracking and running tracing-journald activity service; verify Kubeless 0.6.0 dependency compatibility
   - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
     title: Qualify protocol coverage against refreshed upstream and surface existing practical relative sizing independently of exact restoration
   - resource: opencode://ses_eaf7cba09ffe6roChmdCMdpIpd
@@ -58,7 +60,8 @@ the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 - A read-only **desktop JSON dump** executable and example.
 - Geometry-derived **layout shape** and optional existing Wayland monitor inspection,
   with **no compositor patches**.
-- A native **5 s stable-active-window** example—not the project's goal.
+- Reusable [typed tracking](crates/tracking/README.md) and a library-backed
+  [five-second activity service](crates/activity/README.md) with structured journald output.
 - Complete snapshot batches, lazy queries, and derived output with provenance.
   **No C Data Interface bridge.**
 
@@ -76,7 +79,7 @@ available and why targeted, reversible tiled sizing still needs native API work.
 ## Run from the checkout
 
 The development workspace expects `../kubeless` beside this repository. The
-state crate uses its unpublished `kubeless-view-memory` **0.1.0** leaf through
+state crate uses its `kubeless-view-memory` **0.6.0** leaf through
 the user-selected sibling path dependency.
 
 Discovery uses `UMBRIEL_SOCKET`, or `XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY`.

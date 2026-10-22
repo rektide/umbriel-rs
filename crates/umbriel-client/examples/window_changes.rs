@@ -80,7 +80,7 @@ fn observe(tracker: &mut Tracker, now: Duration, observation: Observation) -> Re
     match tracker.observe(now, observation) {
         Update::Epoch { epoch } => Ok(Some(format!("epoch {epoch}: retained rows are stale; reacquiring"))),
         Update::Gap { epoch, reason } => Ok(Some(format!("epoch {epoch}: source gap {reason}; no continuous history"))),
-        Update::Installed { windows: Some(receipt), .. } => Ok(Some(report(receipt))),
+        Update::Installed { windows: Some(receipt), .. } => Ok(Some(report(*receipt))),
         Update::Rejected { reason, .. } => Ok(Some(format!(
             "decode gap/rejected census: {reason}; {:?}",
             tracker.inventory().status(Family::Windows)

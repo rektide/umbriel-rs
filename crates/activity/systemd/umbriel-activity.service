@@ -1,0 +1,24 @@
+[Unit]
+Description=Umbriel stable active-window observations
+Documentation=https://github.com/rektide/umbriel-rs
+After=umbriel.service
+PartOf=umbriel-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/umbriel-activity --output journal
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=10
+TimeoutStopSec=5
+StandardOutput=null
+StandardError=journal
+SyslogIdentifier=umbriel-activity
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=umbriel-session.target

@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#medium
 sources:
+  - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
+    title: Add reducer-owned metadata change outcome and verify existing memory-view API against sibling Kubeless 0.6.0
   - resource: opencode://ses_eaf7cba09ffe6roChmdCMdpIpd
     title: Raise the default stable-active dwell from 750 ms to 5 s; pin dwell-dependent traces to explicit thresholds
   - resource: opencode://ses_ec5a53b67ffeeyXe8Vd5hIrSva
@@ -27,7 +29,7 @@ sources:
   - resource: ../umbriel-client/README.md
     title: Separately driven source owner, epochs, gaps, and terminal observer lag
   - resource: file:///home/rektide/src/kubeless/view/memory/src/lib.rs
-    title: Current 0.1.0 memory_view, Replacement, Reader, and Writer APIs
+    title: memory_view, Replacement, Reader, and Writer APIs, reverified against 0.6.0
   - resource: file:///home/rektide/src/kubeless/view/impact/src/lib.rs
     title: Public before/after relation traversal and deduplicated impact projection used by the native consumer
   - resource: file:///home/rektide/src/kubeless/design/spirit/open0.gpt6astra.md
@@ -49,10 +51,17 @@ consume raw or typed observations.
 The user approved a **sibling-checkout path dependency** at
 `../../../kubeless/view/memory` relative to this crate: a checkout named
 `kubeless` beside `umbriel-rs`. The current Kubeless workspace and its leaf
-packages are version **0.1.0**. This checkout has no configured remote; this
-is not a published-registry or reproducibly pinned Git dependency. Building
+packages are version **0.6.0**, explicitly matched by this crate's path dependency.
+This is not a reproducibly pinned Git dependency. Building
 this crate or the client examples requires that sibling development checkout.
 Nothing is vendored, published, or changed in Kubeless.
+
+`StableActiveReducer::observe_changes` additionally returns full selected metadata
+when the same already-accepted candidate changes. Identity breaks and invalidation
+end that eligibility; geometry-only/no-op/pre-acceptance churn emit nothing.
+The existing `observe` remains available when callers do not need metadata events.
+The [tracking crate](../tracking/README.md) now owns typed stream/runtime composition;
+the [activity application](../activity/README.md) owns structured output and service lifecycle.
 
 The actual current leaf provides `memory_view`, checked
 `Replacement::try_from_entries`, atomic `Writer::replace_affected`, and opt-in

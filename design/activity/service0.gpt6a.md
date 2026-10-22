@@ -8,6 +8,8 @@ generated:
   at: 2026-10-18
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
+    title: Link implemented simple-service slice and explicit remaining notify/history acceptance
   - resource: opencode://ses_eaf7d6478ffe6aN53eIe8qdy8D
     title: Initial service commissioning and ticket decomposition, followed by tracing-first direction and a linked records refinement
   - resource: ../../crates/umbriel-client/examples/active_window.rs
@@ -43,6 +45,11 @@ extensions:
 ---
 
 # Activity service and journal replay
+
+**Delivered continuation (October 22):** [runtime and deployment evidence](runtime0.gpt6a.md)
+records the reusable library, tracing-native application and installed Type=simple
+service. The complete notify/watchdog/history lifecycle proposed here remains in
+its existing tickets; this predecessor is retained as design evidence.
 
 **Continuation:** [Tracing-native activity records](records0.gpt6a.md) records the
 user's subsequent selection of tracing-journald for all journal export and tracing

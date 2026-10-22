@@ -8,6 +8,8 @@ generated:
   at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
+    title: Link delivered tracking/activity application and verified user-service deployment, preserving notify/history follow-up scope
   - resource: opencode://ses_e9b39b353ffe32xtHZa0jZA7F3
     title: Added the Noctalia shell capabilities research entry to the layout-control listing
   - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
@@ -32,6 +34,10 @@ sources:
 
 ## Current entry points
 
+- [Reusable stream tracking](../crates/tracking/README.md) and
+  [activity application](../crates/activity/README.md): typed Inventory composition,
+  stable acceptance plus metadata, tracing/journal records and installed user unit.
+  [Deployment evidence](activity/runtime0.gpt6a.md) records tests and runtime observations.
 - [Usage guide](../README.md): run the native examples and choose a crate.
 - [Implemented architecture](architecture/architecture2.gpt6a.md): six-crate
   boundaries, wire custody, independent observations, state and Polars data paths.
@@ -58,7 +64,9 @@ sources:
 - [Activity service and journal replay](activity/service0.gpt6a.md): foreground
   user-service proposal, notify/watchdog crate choices, structured journal records,
   shared JSONL/NDJSON/logfmt output and history re-emission. Work anchor:
-  `umbrs-activity`; only the five-second default is commissioned immediately.
+  `umbrs-activity`; its original immediate commission was the five-second default.
+  The [runtime delivery](activity/runtime0.gpt6a.md) now implements the tracking,
+  record and simple-service slice; notify and native history remain follow-ups.
   [Tracing-native records and capability inventory](activity/records0.gpt6a.md)
   refines the delivery order around the selected tracing-journald architecture,
   structured fields, selected metadata updates, JSON/logfmt/OSC layers and an

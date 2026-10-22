@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::{error::Error, path::PathBuf, time::Duration};
 use umbriel_activity::{
-    Recorder, emit,
-    output::{self, Output},
+    Recorder,
+    output::{Output, Worker},
 };
 use umbriel_client::{Discovery, Endpoint, Reconnect, SubscriptionOptions};
 use umbriel_protocol::envelope::Family;
@@ -30,7 +30,8 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse();
-    let dispatch = output::dispatch(args.output)?;
+    let shutdown_timeout = Duration::from_millis(args.shutdown_timeout_ms);
+    let worker = tokio::time::timeout(shutdown_timeout, Worker::start(args.output)).await??;
     let endpoint = match args.socket {
         Some(path) => Endpoint::new(path),
         None => Discovery::from_env().resolve()?,
@@ -54,17 +55,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             biased;
             _ = terminate.recv() => break Ok(()),
             _ = interrupt.recv() => break Ok(()),
+            _ = worker.closed() => break Err("activity output worker ended".into()),
             event = activity.next(&mut observer) => match event {
-                Ok(event) => emit(&recorder.record(event, activity.elapsed()), &dispatch),
+                Ok(event) => if let Err(error) = worker.send(recorder.record(event, activity.elapsed())) { break Err(error.into()); },
                 Err(error) => {
-                    if let Some(record) = recorder.terminal(error.to_string(), activity.elapsed()) { emit(&record, &dispatch); }
+                    if let Some(record) = recorder.terminal(error.to_string(), activity.elapsed()) { let _ = worker.send(record); }
                     break Err(Box::<dyn Error + Send + Sync>::from(error));
                 }
             }
         }
     };
-    emit(&recorder.stopping(activity.elapsed()), &dispatch);
-    tokio::time::timeout(Duration::from_millis(args.shutdown_timeout_ms), source.shutdown()).await?;
+    let stopping = worker.send(recorder.stopping(activity.elapsed()));
+    tokio::time::timeout(shutdown_timeout, async {
+        source.shutdown().await;
+        worker.drain().await
+    })
+    .await??;
+    stopping?;
     result
 }
 

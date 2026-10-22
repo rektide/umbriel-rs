@@ -51,6 +51,10 @@ impl Recorder {
         }
     }
     pub fn record(&mut self, event: Event, now: Duration) -> Record {
+        let now = match &event {
+            Event::Accepted(active) | Event::Metadata(active) => active.emitted_at,
+            _ => now,
+        };
         let payload = match event {
             Event::Epoch { epoch } => {
                 self.epoch = epoch;

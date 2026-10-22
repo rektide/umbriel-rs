@@ -24,7 +24,7 @@ pub enum Update {
         family: Family,
         before: Status,
         after: Status,
-        windows: Option<WindowChanges>,
+        windows: Option<Box<WindowChanges>>,
     },
     Rejected {
         epoch: u64,
@@ -114,7 +114,9 @@ impl Tracker {
                 };
                 let before = self.inventory.status(family);
                 let result = match event {
-                    Event::Windows(windows) if self.window_changes => self.inventory.install_windows_changes(stamp, windows).map(Some),
+                    Event::Windows(windows) if self.window_changes => {
+                        self.inventory.install_windows_changes(stamp, windows).map(|receipt| Some(Box::new(receipt)))
+                    }
                     event => self.inventory.install(stamp, event).map(|()| None),
                 };
                 match result {

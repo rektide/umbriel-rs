@@ -136,3 +136,46 @@ async fn queued_transition_beats_due_timer_and_timer_needs_no_new_frame() {
     drop(send);
     peer.await.unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn terminal_observer_lag_beats_due_acceptance() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lag.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let (send, mut receive) = mpsc::channel::<String>(4);
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read, mut write) = socket.into_split();
+        let mut line = String::new();
+        BufReader::new(read).read_line(&mut line).await.unwrap();
+        write.write_all(frame("A", "first").as_bytes()).await.unwrap();
+        while let Some(frame) = receive.recv().await {
+            write.write_all(frame.as_bytes()).await.unwrap();
+        }
+    });
+    let options = SubscriptionOptions {
+        observer_capacity: 2,
+        ..Default::default()
+    };
+    let (source, mut observer) = Endpoint::new(path).subscribe(&[Family::Windows], options).await.unwrap();
+    let mut activity = Activity::new(Duration::from_secs(5));
+    while !matches!(activity.next(&mut observer).await.unwrap(), Event::Ready { .. }) {}
+    let mut tap = source.observe().await.unwrap();
+    tokio::time::advance(Duration::from_secs(5)).await;
+    for id in ["B", "A", "C"] {
+        send.send(frame(id, "queued")).await.unwrap();
+        loop {
+            if matches!(tap.recv().await.unwrap(), Observation::Frame { .. }) {
+                break;
+            }
+        }
+    }
+    assert!(matches!(
+        activity.next(&mut observer).await,
+        Err(umbriel_tracking::activity::Error::Delivery(umbriel_client::DeliveryEnd::Lagged { .. }))
+    ));
+    assert!(!activity.tracker().inventory().status(Family::Windows).is_ready());
+    source.shutdown().await;
+    drop(send);
+    peer.await.unwrap();
+}
