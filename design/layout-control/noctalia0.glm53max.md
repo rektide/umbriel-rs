@@ -9,6 +9,8 @@ generated:
   at: 2026-10-22
   by: 'model:zai-coding-plan/glm-5.3#max'
 sources:
+  - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
+    title: Review research and distinguish shared IPC transport from current typed coverage; connect refreshed native and Longcat evidence
   - resource: opencode://ses_e9b39b353ffe32xtHZa0jZA7F3
     title: Commissioned G research on Noctalia shell capabilities; read the noctalia-dev archives, fetched all three upstream repos to current main, cross-verified plugin actions against the compositor action registry, and wrote this document
   - resource: longcat-needs0.gpt6a.md
@@ -293,10 +295,10 @@ must talk to Umbriel itself, as the companion plugin does by shelling out.
 
 ## Implications for umbriel-rs and Longcat
 
-1. **The shell is another IPC consumer, not a competitor.** Everything the
-   core shell does over Umbriel IPC is within the protocol
-   [catalog](../protocol/commands0.glm53m.md) this repository already models:
-   subscribe families, `msg` action strings, `keyboard-layouts`. A Rust client
+1. **The shell is another IPC consumer, not a competitor.** The core shell
+   uses the same query, subscription and `msg` mechanisms described in the
+   [catalog](../protocol/commands0.glm53m.md), but current shell usage exceeds
+   this library's older typed coverage, notably for `outputs`. A Rust client
    can coexist; the compositor's per-family coalescing and per-request
    connections are shared conditions, not shell-specific behavior.
 2. **Layout-control precedent is focus-based and plugin-level.** The only
@@ -323,6 +325,12 @@ must talk to Umbriel itself, as the companion plugin does by shelling out.
    companion plugin surfaces as an error string today.
 
 ## Connections
+
+- [Current native source refresh](upstream-refresh0.gpt6a.md): the preserved
+  archive and separate current-upstream worktree, newer membership/output facts,
+  and remaining native control gaps.
+- [Current Longcat semantics](longcat-current0.glm53m.md): consumer-side axis,
+  tab-unit, targeting and restoration requirements beyond shell UI controls.
 
 - [Layout-control needs](longcat-needs0.gpt6a.md): the requirements document
   this survey feeds; owns the Longcat/Umbriel/Kubeless decomposition and the
