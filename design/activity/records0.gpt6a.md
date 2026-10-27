@@ -280,12 +280,20 @@ reading versus journalctl streaming remains open pending FX's reuse research.
    that design** (interpretation of the user's requested AM -> XH handoff). The
    notify ticket records the sequencing; no dependent agent has been dispatched yet.
 
-Remaining questions worth settling with the user:
+Questions settled with the user:
 
-- Are OSC outputs wanted as actual terminal control bytes, structured logged
-  protocol data, or both? The architecture supports both without two producer paths.
-- Does the stock tracing JSON envelope fit the consumers? It is the lowest-cost
-  start; a custom flattened envelope is only worthwhile for a concrete consumer.
+- **OSC projection (settled 2026-10-27):** either/or/both. The same session
+  events must support structured (journal/JSON) and terminal-byte (OSC 3008/7501)
+  projections as **independently selectable layers**, not one fixed choice. The
+  producer stays single-path; `umbrs-activity-session-osc` owns the wire formats.
+- **JSON envelope:** resolved by the shipped implementation — the stock
+  tracing-subscriber envelope with event fields under `fields` is the delivered
+  default (see `crates/activity/README.md`); revisit only for a concrete consumer.
+
+Delivery status (2026-10-27): steps 1–3 landed — records/journal/cli/reconnect/
+shutdown are closed, the service runs as a Type=simple user unit, and remaining
+work (notify design/build, history native readback, session-osc, decisions) is
+tracked on open tickets under `umbrs-activity`.
 
 ## Verified local reuse from FX's survey
 
