@@ -13,7 +13,7 @@ sources:
   - resource: ../../design/activity/history0.gpt61s.md
     title: Completion, title diagnosis, native checks and deployment boundaries
   - resource: opencode://ses_e6e93b602ffe0iILE38OiivjPj
-    title: Add a bounded JSON Lines journal dump to the activity command
+    title: Add a bounded JSON Lines journal dump and follow option to the activity command
   - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
     title: Implemented and tested tracing application and bounded output worker; installed dedicated service and verified native journal fields
   - resource: ../../design/activity/records0.gpt6a.md
@@ -48,6 +48,7 @@ cargo run -p umbriel-activity -- --socket /run/user/1000/umbriel-wayland-0.sock 
 cargo run -p umbriel-activity -- --output journal --dwell-ms 5000
 cargo run -p umbriel-activity -- dump > activity.jsonl
 cargo run -p umbriel-activity -- dump --tail 100 > recent.jsonl
+cargo run -p umbriel-activity -- dump --tail 100 -f >> activity.jsonl
 ```
 
 **For useful window information from the already-running service, use `history
@@ -123,6 +124,10 @@ The tracing envelope's timestamp is export time; `fields.event_time` is original
 `dump` preserves the separate JSON Lines export entrance: `fields` contains
 decoded activity data, `delivery` contains selection-bound cursor, receive time
 and observed origin. Dump defaults to retained head (unlike history's recent 50).
+Use `dump -f` or `dump --follow` to continue emitting new records after the
+initial range; use `--tail N -f` to start with a recent suffix instead of all
+retained records. Stop with Ctrl-C. The per-range budgets and exact-cursor
+continuity rules above also apply while following.
 
 Each captured range defaults to 10,000 entries, 32 MiB copied native fields,
 1 MiB per native entry and five seconds; at most 1,024 fields per entry. CLI

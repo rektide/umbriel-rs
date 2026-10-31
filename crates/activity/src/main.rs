@@ -35,7 +35,7 @@ enum Command {
     /// Show recent window titles; optionally replay then follow the running service.
     History(history_cli::History),
     /// Export retained activity journal records as JSON Lines.
-    Dump(history_cli::Range),
+    Dump(history_cli::Dump),
 }
 
 #[tokio::main]
@@ -157,7 +157,18 @@ mod tests {
             history::{Cursor, Delivery, Entry, Feed},
         };
         let args = Args::try_parse_from(["activity", "dump", "--tail", "3"]).unwrap();
-        assert!(matches!(args.command, Some(Command::Dump(history_cli::Range { tail: Some(3), .. }))));
+        assert!(matches!(
+            args.command,
+            Some(Command::Dump(history_cli::Dump {
+                range: history_cli::Range { tail: Some(3), .. },
+                follow: false
+            }))
+        ));
+        assert!(matches!(
+            Args::try_parse_from(["activity", "dump", "-f"]).unwrap().command,
+            Some(Command::Dump(history_cli::Dump { follow: true, .. }))
+        ));
+        assert!(Args::try_parse_from(["activity", "dump", "--follow", "--until", "2026-10-31T00:00:00Z"]).is_err());
         let feed = Feed::default();
         let entry = Entry {
             record: Record {

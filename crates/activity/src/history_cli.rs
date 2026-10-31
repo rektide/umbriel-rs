@@ -65,10 +65,18 @@ pub(super) struct History {
     #[command(flatten)]
     range: Range,
     /// After the finite initial range, wait for exact-cursor suffixes.
-    #[arg(long, conflicts_with = "until")]
+    #[arg(short, long, conflicts_with = "until")]
     follow: bool,
     #[arg(long, value_enum, default_value_t = Export::Human)]
     output: Export,
+}
+#[derive(Debug, Args)]
+pub(super) struct Dump {
+    #[command(flatten)]
+    pub range: Range,
+    /// After the initial range, continue exporting new records.
+    #[arg(short, long, conflicts_with = "until")]
+    pub follow: bool,
 }
 fn positive(value: &str) -> Result<usize, String> {
     value.parse().ok().filter(|v| *v > 0).ok_or_else(|| "expected a positive integer".into())
@@ -108,8 +116,8 @@ impl Range {
 pub(super) async fn history(args: History, shutdown: Duration) -> Result<(), Failure> {
     run(args.range, args.follow, Some(args.output), shutdown).await
 }
-pub(super) async fn dump(range: Range, shutdown: Duration) -> Result<(), Failure> {
-    run(range, false, None, shutdown).await
+pub(super) async fn dump(args: Dump, shutdown: Duration) -> Result<(), Failure> {
+    run(args.range, args.follow, None, shutdown).await
 }
 
 async fn run(range: Range, follow: bool, output: Option<Export>, shutdown: Duration) -> Result<(), Failure> {

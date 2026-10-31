@@ -149,6 +149,25 @@ async fn native_empty_feed_follow_cancels_without_compositor_or_journal_writes()
 }
 
 #[tokio::test]
+#[ignore = "read-only: requires retained activity records and native journal access"]
+async fn dump_follow_emits_initial_json_and_stops_on_signal() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_umbriel-activity"))
+        .args(["dump", "--tail", "1", "-f"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let line = timeout(Duration::from_secs(8), lines.next_line()).await.unwrap().unwrap().unwrap();
+    let record: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert!(record["fields"]["event"].is_string());
+    assert!(record["delivery"]["cursor"]["opaque"].is_string());
+    terminate(&mut child).await;
+    assert!(timeout(Duration::from_secs(4), child.wait()).await.unwrap().unwrap().success());
+}
+
+#[tokio::test]
 #[ignore = "read-only: requires enough retained activity records to fill a stdout pipe"]
 async fn native_follow_replay_and_blocked_stdout_have_bounded_signal_shutdown() {
     for format in ["human", "jsonl", "logfmt"] {
