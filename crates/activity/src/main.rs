@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::{error::Error, path::PathBuf, time::Duration};
 use umbriel_activity::{
     Recorder,
@@ -11,6 +11,8 @@ use umbriel_tracking::activity::Activity;
 #[derive(Debug, Parser)]
 #[command(version, about = "Observe stable Umbriel activity through tracing layers")]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Explicit socket; otherwise use the client's environment discovery.
     #[arg(long)]
     socket: Option<PathBuf>,
@@ -27,9 +29,31 @@ struct Args {
     shutdown_timeout_ms: u64,
 }
 
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Export retained activity journal records as JSON Lines.
+    Dump {
+        /// Limit the export to the most recent N records.
+        #[arg(long)]
+        tail: Option<usize>,
+        /// Maximum number of journal entries to read.
+        #[arg(long, default_value_t = 10_000)]
+        max_entries: usize,
+        /// Maximum total bytes of journal fields to read.
+        #[arg(long, default_value_t = 32 * 1024 * 1024)]
+        max_bytes: usize,
+        /// Maximum cooperative read time in seconds.
+        #[arg(long, default_value_t = 5)]
+        timeout_secs: u64,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse();
+    if let Some(Command::Dump { tail, max_entries, max_bytes, timeout_secs }) = args.command {
+        return dump(tail, max_entries, max_bytes, timeout_secs);
+    }
     let shutdown_timeout = Duration::from_millis(args.shutdown_timeout_ms);
     let worker = tokio::time::timeout(shutdown_timeout, Worker::start(args.output)).await??;
     let endpoint = match args.socket {
@@ -75,6 +99,58 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     result
 }
 
+fn dump(tail: Option<usize>, max_entries: usize, max_bytes: usize, timeout_secs: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
+    use std::io::{self, Write};
+    use umbriel_activity::history::{Feed, Limits, Reader, Start};
+
+    let mut reader = Reader::open(Feed::default())?;
+    let limits = Limits { max_entries, max_bytes, max_elapsed: Duration::from_secs(timeout_secs), ..Limits::default() };
+    let replay = reader.read(tail.map_or(Start::Head, Start::Tail), None, None, limits, &|| false)?;
+    let mut out = io::BufWriter::new(io::stdout().lock());
+    for entry in replay.entries {
+        serde_json::to_writer(&mut out, &dump_record(&entry))?;
+        writeln!(out)?;
+    }
+    out.flush()?;
+    Ok(())
+}
+
+fn dump_record(entry: &umbriel_activity::history::Entry) -> serde_json::Value {
+    use serde_json::{Map, Value, json};
+    use umbriel_activity::Payload;
+    let r = &entry.record;
+    let mut fields = Map::new();
+    fields.insert("schema_version".into(), json!(1));
+    fields.insert("run_id".into(), json!(r.run_id));
+    fields.insert("seq".into(), json!(r.seq));
+    fields.insert("event_time".into(), json!(r.event_time));
+    fields.insert("event_mono_ms".into(), json!(r.event_mono_ms));
+    let (event, epoch, active) = match &r.payload {
+        Payload::Epoch { epoch } => ("source.epoch", Some(*epoch), None),
+        Payload::Ready { epoch } => ("source.ready", Some(*epoch), None),
+        Payload::Gap { epoch, reason } => { fields.insert("reason".into(), json!(reason)); ("source.gap", Some(*epoch), None) },
+        Payload::Stopping => ("source.stopping", None, None),
+        Payload::Accepted(active) => ("activity.accepted", Some(active.epoch), Some(active)),
+        Payload::Metadata { active, accepted_seq } => { fields.insert("accepted_seq".into(), json!(accepted_seq)); ("activity.metadata", Some(active.epoch), Some(active)) },
+    };
+    fields.insert("event".into(), json!(event));
+    if let Some(epoch) = epoch { fields.insert("epoch".into(), json!(epoch)); }
+    if let Some(active) = active {
+        fields.insert("state".into(), json!(if active.window.is_some() { "active" } else { "none" }));
+        fields.insert("since_mono_ms".into(), json!(active.since.as_millis()));
+        fields.insert("last_observed_mono_ms".into(), json!(active.last_observed.as_millis()));
+        fields.insert("dwell_ms".into(), json!(r.dwell_ms));
+        if let Some(w) = &active.window {
+            fields.insert("window_id".into(), json!(w.id.as_str()));
+            fields.insert("app_id".into(), json!(w.app_id));
+            fields.insert("title".into(), json!(w.title));
+            fields.insert("workspace_id".into(), json!(w.workspace.as_str()));
+            fields.insert("scratchpad".into(), json!(w.scratchpad));
+        }
+    }
+    json!({ "fields": Value::Object(fields), "delivery": entry.delivery })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +164,23 @@ mod tests {
             Args::try_parse_from(["activity", "--socket", "/explicit"]).unwrap().socket,
             Some("/explicit".into())
         );
+    }
+
+    #[test]
+    fn dump_arguments_and_json_lines_fields() {
+        use umbriel_activity::{Payload, Record, history::{Cursor, Delivery, Entry, Feed}};
+        let args = Args::try_parse_from(["activity", "dump", "--tail", "3"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Dump { tail: Some(3), .. })));
+        let feed = Feed::default();
+        let entry = Entry {
+            record: Record { run_id: "run".into(), seq: 1, event_time: "time".into(), event_mono_ms: 2, dwell_ms: 0, payload: Payload::Gap { epoch: 3, reason: "line\nnext".into() } },
+            delivery: Delivery { cursor: Cursor { feed: feed.clone(), opaque: "cursor".into() }, realtime_usec: 42, uid: feed.uid, user_unit: feed.user_unit.clone(), boot_id: None, invocation_id: None },
+        };
+        let text = serde_json::to_string(&dump_record(&entry)).unwrap();
+        assert_eq!(text.lines().count(), 1);
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["fields"]["reason"], "line\nnext");
+        assert_eq!(value["fields"]["event"], "source.gap");
+        assert_eq!(value["delivery"]["realtime_usec"], 42);
     }
 }

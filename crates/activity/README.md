@@ -8,6 +8,8 @@ generated:
   at: 2026-10-22
   by: model:openai/gpt-6-astra#medium
 sources:
+  - resource: opencode://ses_e6e93b602ffe0iILE38OiivjPj
+    title: Add a bounded JSON Lines journal dump to the activity command
   - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
     title: Implemented and tested tracing application and bounded output worker; installed dedicated service and verified native journal fields
   - resource: ../../design/activity/records0.gpt6a.md
@@ -37,7 +39,20 @@ live here. It requires neither Kopacetic nor Polars.
 cargo run -p umbriel-activity -- --output jsonl
 cargo run -p umbriel-activity -- --socket /run/user/1000/umbriel-wayland-0.sock --output logfmt
 cargo run -p umbriel-activity -- --output journal --dwell-ms 5000
+cargo run -p umbriel-activity -- dump > activity.jsonl
+cargo run -p umbriel-activity -- dump --tail 100 > recent.jsonl
 ```
+
+`dump` reads the retained local journal for the current UID and
+`umbriel-activity.service`, without connecting to the compositor or writing back
+to the journal. It emits one JSON object per line: `fields` holds decoded activity
+fields and `delivery` holds journal cursor, receive time and origin metadata.
+JSONL and NDJSON are names for the same format. The snapshot is bounded by
+default to 10,000 entries, 32 MiB and five seconds; use `--max-entries`,
+`--max-bytes` and `--timeout-secs` to raise these limits, or `--tail` to select
+fewer entries. A budget or decoding failure exits nonzero rather than emitting a
+partial snapshot. Retention and journal access determine what is available; the
+dump is not a guarantee of complete history.
 
 `--output ndjson` aliases `jsonl`. Explicit `--socket` overrides `UMBRIEL_SOCKET`,
 then client discovery falls back to `XDG_RUNTIME_DIR` plus `WAYLAND_DISPLAY`.
@@ -160,10 +175,9 @@ stopped with `systemctl --user stop umbriel-activity.service` and disabled with
 This delivered slice uses **Type=simple**, with no READY/watchdog protocol yet.
 `umbrs-activity-notify` retains the selected AM-design/Astra-xhigh-build sequence;
 `umbrs-activity-unit` remains open for the complete notify/history acceptance.
-Native history/follow remains `umbrs-activity-history`: adapt Cyclrs exact-cursor
-validation and bounded reads, plus Phyllited byte/repeated-field fixtures, as
-described in the [journal survey](file:///home/rektide/src/zooming-kittens/design/activity/journald-survey0.gpt6a.md).
-No replay decoder, OSC, session-idle/suspend inference or live reload is delivered.
+Native history/follow remains `umbrs-activity-history`; the bounded dump uses the
+in-progress native reader. OSC, session-idle/suspend inference and live reload are
+not delivered.
 
 ## Verification and deployment evidence
 
