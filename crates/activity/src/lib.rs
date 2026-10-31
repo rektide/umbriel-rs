@@ -1,12 +1,13 @@
 //! Application-owned field-first records. Reuse tracking without this output layer.
 #![forbid(unsafe_code)]
 pub mod output;
+pub mod history;
 use std::time::Duration;
 use tracing::Dispatch;
 use umbriel_state::active::StableActive;
 use umbriel_tracking::activity::Event;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Payload {
     Epoch { epoch: u64 },
     Ready { epoch: u64 },
@@ -17,7 +18,7 @@ pub enum Payload {
 }
 
 /// Original identity/time, independently re-emittable through an export Dispatch.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
     pub run_id: String,
     pub seq: u64,
@@ -131,7 +132,31 @@ pub fn emit(record: &Record, dispatch: &Dispatch) {
             window_id = window.map(|w| w.id.as_str()), app_id = window.map(|w| w.app_id.as_str()),
             title = window.map(|w| w.title.as_str()), workspace_id = window.map(|w| w.workspace.as_str()),
             scratchpad = window.map(|w| w.scratchpad.as_str()),
-            "Umbriel activity observation"
+            message = %Summary(record)
         );
     });
+}
+
+/// A terminal-safe, title-first summary shared by journal MESSAGE and human output.
+/// JSON quoting keeps newlines, ESC/OSC and other controls inert without changing
+/// the original structured fields.
+pub struct Summary<'a>(pub &'a Record);
+impl std::fmt::Display for Summary<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let quote = |text: &str| serde_json::to_string(text).expect("string serialization");
+        let (kind, active) = match &self.0.payload {
+            Payload::Accepted(active) => ("accepted", Some(active)),
+            Payload::Metadata { active, .. } => ("metadata", Some(active)),
+            Payload::Epoch { epoch } => return write!(f, "source epoch {epoch}"),
+            Payload::Ready { epoch } => return write!(f, "source ready epoch={epoch}"),
+            Payload::Gap { epoch, reason } => return write!(f, "source gap epoch={epoch} reason={}", quote(reason)),
+            Payload::Stopping => return f.write_str("source stopping"),
+        };
+        match active.and_then(|a| a.window.as_ref()) {
+            Some(window) => write!(f, "{kind} {} app={} window={} workspace={} scratchpad={}",
+                quote(&window.title), quote(&window.app_id), quote(window.id.as_str()),
+                quote(window.workspace.as_str()), quote(&window.scratchpad)),
+            None => write!(f, "{kind} no active window"),
+        }
+    }
 }

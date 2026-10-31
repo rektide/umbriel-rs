@@ -76,11 +76,18 @@ fn native_journal_fields_preserve_multiline_long_titles_and_none() {
     assert_eq!(entries[0]["UMBRIEL_SCHEMA_VERSION"], "1");
     assert_eq!(entries[0]["UMBRIEL_TITLE"], title);
     assert_eq!(entries[0]["UMBRIEL_WINDOW_ID"], "synthetic-journal-probe");
+    let message = entries[0]["MESSAGE"].as_str().unwrap();
+    assert!(message.contains("native probe\\n\\\"quoted\\\""));
+    assert!(message.contains("app=\"umbriel-activity-test\""));
+    assert!(message.contains("window=\"synthetic-journal-probe\""));
+    assert!(message.contains("workspace=\"probe\""));
+    assert!(!message.contains('\n'), "summary must stay on one journal line");
     assert_eq!(entries[0]["UMBRIEL_EVENT_TIME"], accepted.event_time);
     assert_eq!(entries[0]["SYSLOG_IDENTIFIER"], "umbriel-activity");
     assert_eq!(entries[0]["PRIORITY"], "5");
     assert_eq!(entries[1]["UMBRIEL_ACCEPTED_SEQ"], "1");
     assert_eq!(entries[2]["UMBRIEL_STATE"], "none");
+    assert_eq!(entries[2]["MESSAGE"], "accepted no active window");
     assert!(entries[2].get("UMBRIEL_WINDOW_ID").is_none());
     assert_eq!(entries[3]["UMBRIEL_EVENT"], "source.gap");
     assert!(entries[3].get("UMBRIEL_STATE").is_none());

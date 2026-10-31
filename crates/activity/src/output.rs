@@ -14,6 +14,7 @@ use tracing_subscriber::{
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
 pub enum Output {
+    Human,
     #[value(alias = "ndjson")]
     Jsonl,
     Logfmt,
@@ -87,6 +88,7 @@ pub fn dispatch(output: Output) -> Result<Dispatch, Box<dyn Error + Send + Sync>
     let filter =
         filter_fn(|metadata| metadata.target() == "umbriel::activity").or(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")));
     Ok(match output {
+        Output::Human => Dispatch::new(tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().event_format(Human).with_filter(filter))),
         Output::Jsonl => Dispatch::new(tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().json().with_filter(filter))),
         Output::Logfmt => Dispatch::new(tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().event_format(Logfmt).with_filter(filter))),
         Output::Journal => Dispatch::new(
@@ -98,6 +100,30 @@ pub fn dispatch(output: Output) -> Result<Dispatch, Box<dyn Error + Send + Sync>
             ),
         ),
     })
+}
+
+/// Original application time and the shared summary; no synthetic export time.
+pub struct Human;
+impl<S, N> FormatEvent<S, N> for Human
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(&self, _: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &tracing::Event<'_>) -> fmt::Result {
+        #[derive(Default)]
+        struct Fields { time: String, message: String }
+        impl Visit for Fields {
+            fn record_str(&mut self, field: &Field, value: &str) {
+                if field.name() == "event_time" { self.time = value.into(); }
+            }
+            fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+                if field.name() == "message" { self.message = format!("{value:?}"); }
+            }
+        }
+        let mut fields = Fields::default();
+        event.record(&mut fields);
+        writeln!(writer, "{}  {}", fields.time.escape_debug(), fields.message)
+    }
 }
 
 /// Flat logfmt dialect: all string/debug values use JSON quoting/escaping;

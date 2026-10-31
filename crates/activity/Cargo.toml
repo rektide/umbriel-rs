@@ -23,6 +23,10 @@ tracing-journald = "0.3.2"
 jiff = "0.2"
 uuid = { version = "1", features = ["v4"] }
 serde_json = "1"
+systemd = "0.10.1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
 tempfile = "3"
