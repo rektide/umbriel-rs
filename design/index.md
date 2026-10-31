@@ -8,6 +8,8 @@ generated:
   at: 2026-10-19
   by: model:openai/gpt-6-astra
 sources:
+  - resource: opencode://ses_e6ea26b94ffeu233qr5mGPYsvz
+    title: Link completed native history/follow, title usability diagnosis and native read-only verification while retaining predecessor designs
   - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
     title: Link delivered tracking/activity application and verified user-service deployment, preserving notify/history follow-up scope
   - resource: opencode://ses_e9b39b353ffe32xtHZa0jZA7F3
@@ -38,6 +40,10 @@ sources:
   [activity application](../crates/activity/README.md): typed Inventory composition,
   stable acceptance plus metadata, tracing/journal records and installed user unit.
   [Deployment evidence](activity/runtime0.gpt6a.md) records tests and runtime observations.
+- [Useful window titles and native history](activity/history0.gpt61s.md): completed
+  human history/follow, JSONL/logfmt replay, retained dump export, exact native
+  cursors, bounds and signal cancellation; title fidelity witnessed privately
+  against the existing service without installation/restart.
 - [Usage guide](../README.md): run the native examples and choose a crate.
 - [Implemented architecture](architecture/architecture2.gpt6a.md): six-crate
   boundaries, wire custody, independent observations, state and Polars data paths.
@@ -66,7 +72,8 @@ sources:
   shared JSONL/NDJSON/logfmt output and history re-emission. Work anchor:
   `umbrs-activity`; its original immediate commission was the five-second default.
   The [runtime delivery](activity/runtime0.gpt6a.md) now implements the tracking,
-  record and simple-service slice; notify and native history remain follow-ups.
+   record and simple-service slice; [native history and useful titles](activity/history0.gpt61s.md)
+   are now delivered, while notify/full unit fault verification remain follow-ups.
   [Tracing-native records and capability inventory](activity/records0.gpt6a.md)
   refines the delivery order around the selected tracing-journald architecture,
   structured fields, selected metadata updates, JSON/logfmt/OSC layers and an

@@ -8,6 +8,8 @@ generated:
   at: 2026-10-14
   by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_e6ea26b94ffeu233qr5mGPYsvz
+    title: Complete native history/follow and useful title-first viewing of the existing service without restart
   - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
     title: Deliver reusable tracking and running tracing-journald activity service; verify Kubeless 0.6.0 dependency compatibility
   - resource: opencode://ses_e9b39fedaffejzlE158Z9Oq5aK
@@ -61,7 +63,9 @@ the protocol and session cores are sans-I/O, with a Tokio Unix adapter on top.
 - Geometry-derived **layout shape** and optional existing Wayland monitor inspection,
   with **no compositor patches**.
 - Reusable [typed tracking](crates/tracking/README.md) and a library-backed
-  [five-second activity service](crates/activity/README.md) with structured journald output.
+   [five-second activity service](crates/activity/README.md) with structured journald output.
+- **Title-first activity history/follow** plus JSONL/NDJSON/logfmt replay and
+  native cursor-aware export, usable against the already-running service.
 - Complete snapshot batches, lazy queries, and derived output with provenance.
   **No C Data Interface bridge.**
 
@@ -186,6 +190,24 @@ cargo run -p umbriel-client --example active_window
 
 Title and geometry changes do not restart the dwell. Focus changes do. The
 example keeps reading during the wait and invalidates continuity on loss.
+
+### See the running service's window titles and history
+
+```sh
+cargo run -p umbriel-activity -- history --follow
+cargo run -p umbriel-activity -- history --output jsonl
+cargo run -p umbriel-activity -- dump --tail 100 > recent.jsonl
+```
+
+The human view shows original time, title, app ID, window ID and workspace,
+including accepted-window metadata updates. It reads the existing service's
+retained journal; no second compositor observer or service restart is needed.
+History defaults to recent 50 records, while `dump` defaults to retained head.
+For a new foreground observer, `--output human` selects the same useful summary.
+Titles can be private. See the [history guide](crates/activity/README.md#native-history-follow-and-export)
+for filters, exact cursor resume, bounds and loss policy, and the
+[completion record](design/activity/history0.gpt61s.md) for actual checks and the
+generic-MESSAGE presentation diagnosis. No install/restart is implied by a build.
 
 ### Query real snapshots with Polars
 

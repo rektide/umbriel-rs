@@ -236,6 +236,15 @@ fn all_event_shapes_round_trip_original_fields_including_title_and_metadata_link
         assert_eq!(decoded.record, original);
     }
 }
+
+#[test]
+fn large_multiline_titles_remain_lossless_not_a_truncated_native_threshold() {
+    let mut original = record(0);
+    let Payload::Accepted(active) = &mut original.payload else { unreachable!() };
+    active.window.as_mut().unwrap().title = format!("long\n\"quoted\"\\{}", "title ".repeat(8192));
+    let decoded = decode::decode(raw(&original, 0), &Feed::default()).unwrap();
+    assert!(decoded.record == original, "long title or original record changed");
+}
 #[test]
 fn exact_resume_tail_and_empty_have_explicit_semantics() {
     assert_eq!(read(&mut sample(), Start::Head, None).unwrap().entries.len(), 3);

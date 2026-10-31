@@ -53,6 +53,9 @@ pub(super) struct Range {
     /// Maximum copied native field bytes per captured range, including metadata.
     #[arg(long, default_value = "33554432", value_parser = positive)]
     max_bytes: usize,
+    /// Maximum native bytes in one record, including journal metadata/MESSAGE.
+    #[arg(long, default_value = "1048576", value_parser = positive)]
+    max_record_bytes: usize,
     /// Cooperative native-read deadline per range; cannot interrupt a native call.
     #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..))]
     timeout_secs: u64,
@@ -124,8 +127,8 @@ async fn run(range: Range, follow: bool, output: Option<Export>, shutdown: Durat
     let limits = Limits {
         max_entries: range.max_entries,
         max_bytes: range.max_bytes,
+        max_record_bytes: range.max_record_bytes,
         max_elapsed: Duration::from_secs(range.timeout_secs),
-        ..Limits::default()
     };
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;

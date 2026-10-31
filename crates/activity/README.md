@@ -1,13 +1,17 @@
 ---
 type: Reference
 title: Umbriel activity application and journal contract
-description: Runnable library-backed activity service, field-first tracing records, bounded output cancellation, installation and consumer filters.
+description: Activity service plus useful title-first native history/follow, structured export, bounded cancellation, installation and journal contract.
 resource: crates/activity/README.md
 status: implemented
 generated:
-  at: 2026-10-22
-  by: model:openai/gpt-6-astra#medium
+  at: 2026-10-31
+  by: model:openai/gpt-6.1-sol#high
 sources:
+  - resource: opencode://ses_e6ea26b94ffeu233qr5mGPYsvz
+    title: Recover interrupted reader and retained dump command; complete title-first history, exact native replay/follow and private title/cancellation witnesses without restarting the service
+  - resource: ../../design/activity/history0.gpt61s.md
+    title: Completion, title diagnosis, native checks and deployment boundaries
   - resource: opencode://ses_e6e93b602ffe0iILE38OiivjPj
     title: Add a bounded JSON Lines journal dump to the activity command
   - resource: opencode://ses_e9a6a958affehqIA6mCZZF154C
@@ -36,6 +40,9 @@ the observation composition; application time/run identity, tracing and lifecycl
 live here. It requires neither Kopacetic nor Polars.
 
 ```sh
+cargo run -p umbriel-activity -- history
+cargo run -p umbriel-activity -- history --follow
+cargo run -p umbriel-activity -- --output human
 cargo run -p umbriel-activity -- --output jsonl
 cargo run -p umbriel-activity -- --socket /run/user/1000/umbriel-wayland-0.sock --output logfmt
 cargo run -p umbriel-activity -- --output journal --dwell-ms 5000
@@ -43,16 +50,102 @@ cargo run -p umbriel-activity -- dump > activity.jsonl
 cargo run -p umbriel-activity -- dump --tail 100 > recent.jsonl
 ```
 
-`dump` reads the retained local journal for the current UID and
-`umbriel-activity.service`, without connecting to the compositor or writing back
-to the journal. It emits one JSON object per line: `fields` holds decoded activity
-fields and `delivery` holds journal cursor, receive time and origin metadata.
-JSONL and NDJSON are names for the same format. The snapshot is bounded by
-default to 10,000 entries, 32 MiB and five seconds; use `--max-entries`,
-`--max-bytes` and `--timeout-secs` to raise these limits, or `--tail` to select
-fewer entries. A budget or decoding failure exits nonzero rather than emitting a
-partial snapshot. Retention and journal access determine what is available; the
-dump is not a guarantee of complete history.
+**For useful window information from the already-running service, use `history
+--follow`.** It shows original event time, accepted/metadata, **window title**,
+app ID, window ID, workspace and scratchpad. It needs neither another compositor
+subscription nor a service restart. Titles already exist in the service's native
+fields; the previous generic journal MESSAGE hid them from ordinary log views.
+The new producer's MESSAGE uses the same title-first summary, but an older running
+binary keeps its old MESSAGE until deliberately replaced/restarted. Historical
+messages need not be rewritten: the viewer decodes original structured fields.
+
+`--output human` also selects that summary for a foreground observer; its existing
+default remains JSONL. Strings in human output/MESSAGE are quoted and controls
+escaped (including ESC/OSC and C1), not interpreted as terminal commands. Empty
+titles stay visibly empty; no title is invented. **Titles may be private** in any
+projection: take care when storing/sharing output or capturing a terminal.
+
+## Native history, follow and export
+
+```sh
+# Recent 50 selected records, oldest first; metadata updates are included.
+cargo run -p umbriel-activity -- history --tail 50 --follow
+cargo run -p umbriel-activity -- history --all --output logfmt
+cargo run -p umbriel-activity -- history --boot current --output ndjson
+cargo run -p umbriel-activity -- history --run PRODUCER_UUID --all
+cargo run -p umbriel-activity -- dump --since 2026-10-31T00:00:00Z \
+  --until 2026-11-01T00:00:00Z > day.jsonl
+
+# Finite export with an explicit resume token. The token binds the feed selection.
+cargo run -p umbriel-activity --quiet -- history --output jsonl --show-cursor \
+  > recent.jsonl 2> cursor.json
+cargo run -p umbriel-activity -- history --after "$(cat cursor.json)" --follow
+```
+
+Both commands select local readable journal records by `TARGET=umbriel::activity`,
+trusted current effective `_UID` and `_SYSTEMD_USER_UNIT=umbriel-activity.service`.
+Optional `--boot current|BOOT_ID` and `--run UUID` narrow that feed. Explicit
+`--include-foreground` removes the unit requirement and includes this UID's other
+journal writers claiming the target; that is a weaker provenance policy, not
+proof they came from the service. Neither command connects to the compositor or
+writes back to the journal. Native reading requires libsystemd (and its development
+files/pkg-config when building).
+
+- `history` defaults to the most recent **50 records**, not 50 accepted windows.
+  `--all` starts at retained readable head; `--tail N` is an explicit recent suffix.
+  A suffix may begin with full metadata whose `accepted_seq` predecessor is absent.
+- `--since` is inclusive and `--until` exclusive **journal receive time**, RFC3339
+  with an offset. These do not reinterpret `event_time`. Since must precede until;
+  until cannot be combined with follow. Since, tail, all and after are alternate
+  start policies.
+- `--after JSON` requires the complete selection-bound cursor token, not a bare
+  opaque string. Repeat the same boot/run/origin flags when resuming. The cursor
+  is exact and exclusive: native seek, next and test-cursor must agree. A missing,
+  expired, malformed or foreign cursor fails rather than silently seeking nearby.
+- A finite range captures an inclusive upper cut before traversal and validates
+  its anchors again before publishing data. Read/decode/budget failure publishes
+  no partial range. Write failure can leave partial **output**, exits nonzero and
+  does not advance that range's reported token. `--show-cursor` reports JSON on
+  stderr after a completely exported range; it does not save a checkpoint or
+  acknowledge downstream consumption. An empty feed has no token. In follow,
+  stderr can also contain diagnostics, so do not treat the whole stream as one
+  JSON document.
+- Follow reads exact exclusive suffixes from the last completed cut, including
+  entries appended during initial export. Tail applies **only initially**; an
+  initially empty feed reads all subsequent entries from head. File-set changes
+  are reported and cause exact-anchor revalidation. A vanished cut or invalidation
+  during a captured range fails explicitly; there is no silent reseed/prune.
+
+`history --output jsonl|ndjson|logfmt` re-emits original application identity,
+times and metadata through the same tracing helpers as live output, under an
+export-only dispatcher. There is intentionally no history `journal` destination.
+The tracing envelope's timestamp is export time; `fields.event_time` is original.
+`dump` preserves the separate JSON Lines export entrance: `fields` contains
+decoded activity data, `delivery` contains selection-bound cursor, receive time
+and observed origin. Dump defaults to retained head (unlike history's recent 50).
+
+Each captured range defaults to 10,000 entries, 32 MiB copied native fields,
+1 MiB per native entry and five seconds; at most 1,024 fields per entry. CLI
+`--max-entries`, `--max-bytes`, `--max-record-bytes`, `--timeout-secs` adjust these
+budgets; overflow is failure, never successful truncation. Native byte values and
+repeated fields remain distinct during decoding: repeated/invalid UTF-8 schema
+scalars fail, while unrelated binary/repeated native fields are not coerced.
+Unknown schema versions/event kinds fail rather than being silently discarded.
+
+Native I/O and export share one dedicated owning thread. SIGTERM/SIGINT cancel
+between operations, with a finite 250 ms native wait and the existing
+`--shutdown-timeout-ms` process-exit bound (put this global option before the
+subcommand). A stuck native call/full stdout cannot block the signal handler;
+an exceeded shutdown deadline detaches the worker and exits nonzero. Cancellation
+mid-output leaves the previous reported token, so an explicit resume may duplicate
+that incomplete range rather than skip unexported records.
+
+Retention, permissions, journal rate limits and producer failures can lose history.
+An empty read does not establish first use or journal access/completeness. This is
+retained readable history, not an atomic snapshot, attention-duration inference,
+durability receipt or proof that all observations survived. Conflicting run/seq
+content is rejected within each captured range; no unbounded cross-range dedup
+index is maintained.
 
 `--output ndjson` aliases `jsonl`. Explicit `--socket` overrides `UMBRIEL_SOCKET`,
 then client discovery falls back to `XDG_RUNTIME_DIR` plus `WAYLAND_DISPLAY`.
@@ -68,7 +161,7 @@ Systemd can restart the application after failure. No old acceptance survives a 
 `Recorder` attaches UUID run identity, ordered sequence and UTC application time to
 `umbriel_tracking::activity::Event`. `Record` retains original values;
 `emit(&Record, &tracing::Dispatch)` re-emits them unchanged through any selected
-projection. A future history decoder should use an export-only Dispatch, never
+projection. The history decoder uses an export-only Dispatch, never
 the live journal writer. The recorder expects one complete ordered runtime event
 stream; metadata requires its preceding acceptance.
 
@@ -175,11 +268,17 @@ stopped with `systemctl --user stop umbriel-activity.service` and disabled with
 This delivered slice uses **Type=simple**, with no READY/watchdog protocol yet.
 `umbrs-activity-notify` retains the selected AM-design/Astra-xhigh-build sequence;
 `umbrs-activity-unit` remains open for the complete notify/history acceptance.
-Native history/follow remains `umbrs-activity-history`; the bounded dump uses the
-in-progress native reader. OSC, session-idle/suspend inference and live reload are
-not delivered.
+Native history/follow and useful title display are delivered under
+`umbrs-activity-history`. OSC, session-idle/suspend inference and live reload are
+not delivered. Installation/restart is a separate deliberate operation; this
+history work did not restart or replace the running service.
 
 ## Verification and deployment evidence
 
 See [implementation and deployment record](../../design/activity/runtime0.gpt6a.md)
 for commands, actual unit/process identity and limits of the smoke test.
+The [history/title completion record](../../design/activity/history0.gpt61s.md)
+records the current native read-only witness and test scope. Opt-in read-only
+tests live in [history_native.rs](tests/history_native.rs); the older
+[journal.rs](tests/journal.rs) smoke test **writes** synthetic journal records and
+remains separately opt-in.
