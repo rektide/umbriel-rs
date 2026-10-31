@@ -137,3 +137,23 @@ fn source_terminal_is_not_reported_twice() {
     let _ = recorder.record(Event::Epoch { epoch: 2 }, Duration::ZERO);
     assert!(recorder.terminal("lag".into(), Duration::ZERO).is_some());
 }
+
+#[test]
+fn human_output_is_title_first_terminal_safe_and_uses_original_time() {
+    use umbriel_activity::output::{Export, export_dispatch};
+    let bytes = Buffer::default();
+    let writer = bytes.clone();
+    let dispatch = export_dispatch(Export::Human, move || writer.clone());
+    let title = "notes\n\u{1b}]2;not-an-osc\u{7}\u{9b}\"";
+    let mut recorder = Recorder::new(Duration::from_secs(5));
+    let record = recorder.record(Event::Accepted(stable(title)), Duration::from_secs(6));
+    emit(&record, &dispatch);
+    let text = bytes.text();
+    assert_eq!(text.lines().count(), 1);
+    assert!(text.starts_with(&record.event_time));
+    assert!(
+        text.contains("accepted \"notes\\n\\u001b]2;not-an-osc\\u0007\\u{9b}\\\"\" app=\"app\" window=\"A\" workspace=\"ws\""),
+        "{text}"
+    );
+    assert!(!text.contains('\u{1b}') && !text.contains('\u{9b}'));
+}

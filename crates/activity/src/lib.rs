@@ -1,7 +1,7 @@
 //! Application-owned field-first records. Reuse tracking without this output layer.
 #![forbid(unsafe_code)]
-pub mod output;
 pub mod history;
+pub mod output;
 use std::time::Duration;
 use tracing::Dispatch;
 use umbriel_state::active::StableActive;
@@ -143,7 +143,13 @@ pub fn emit(record: &Record, dispatch: &Dispatch) {
 pub struct Summary<'a>(pub &'a Record);
 impl std::fmt::Display for Summary<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let quote = |text: &str| serde_json::to_string(text).expect("string serialization");
+        let quote = |text: &str| {
+            let json = serde_json::to_string(text).expect("string serialization");
+            // JSON escapes C0; also neutralize DEL/C1 terminal controls.
+            json.chars()
+                .map(|c| if c.is_control() { c.escape_unicode().to_string() } else { c.to_string() })
+                .collect::<String>()
+        };
         let (kind, active) = match &self.0.payload {
             Payload::Accepted(active) => ("accepted", Some(active)),
             Payload::Metadata { active, .. } => ("metadata", Some(active)),
@@ -153,9 +159,15 @@ impl std::fmt::Display for Summary<'_> {
             Payload::Stopping => return f.write_str("source stopping"),
         };
         match active.and_then(|a| a.window.as_ref()) {
-            Some(window) => write!(f, "{kind} {} app={} window={} workspace={} scratchpad={}",
-                quote(&window.title), quote(&window.app_id), quote(window.id.as_str()),
-                quote(window.workspace.as_str()), quote(&window.scratchpad)),
+            Some(window) => write!(
+                f,
+                "{kind} {} app={} window={} workspace={} scratchpad={}",
+                quote(&window.title),
+                quote(&window.app_id),
+                quote(window.id.as_str()),
+                quote(window.workspace.as_str()),
+                quote(&window.scratchpad)
+            ),
             None => write!(f, "{kind} no active window"),
         }
     }

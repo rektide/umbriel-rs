@@ -228,3 +228,38 @@ async fn zero_attempts_disables_transport_recovery() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn human_view_exposes_title_and_same_window_metadata_without_another_dwell() {
+    timeout(Duration::from_secs(5), async {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("titles.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_umbriel-activity"))
+            .args(["--socket", path.to_str().unwrap(), "--dwell-ms", "30", "--output", "human"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let (socket, _) = listener.accept().await.unwrap();
+        let mut socket = BufReader::new(socket);
+        socket.read_line(&mut String::new()).await.unwrap();
+        socket.get_mut().write_all(frame("synthetic initial title").as_bytes()).await.unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        loop {
+            let line = lines.next_line().await.unwrap().unwrap();
+            if line.contains("accepted") {
+                assert!(line.contains("accepted \"synthetic initial title\" app=\"app\" window=\"A\" workspace=\"ws\""));
+                break;
+            }
+        }
+        socket.get_mut().write_all(frame("synthetic changed title").as_bytes()).await.unwrap();
+        let line = lines.next_line().await.unwrap().unwrap();
+        assert!(line.contains("metadata \"synthetic changed title\" app=\"app\" window=\"A\""));
+        Command::new("kill").args(["-TERM", &child.id().unwrap().to_string()]).status().await.unwrap();
+        assert!(child.wait().await.unwrap().success());
+    })
+    .await
+    .unwrap();
+}

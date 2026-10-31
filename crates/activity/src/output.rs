@@ -102,6 +102,31 @@ pub fn dispatch(output: Output) -> Result<Dispatch, Box<dyn Error + Send + Sync>
     })
 }
 
+/// Replay destinations are deliberately a different type: there is no journal
+/// variant, so a history command cannot accidentally reinsert its input.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum Export {
+    Human,
+    #[value(alias = "ndjson")]
+    Jsonl,
+    Logfmt,
+}
+pub fn export_dispatch<W>(output: Export, writer: W) -> Dispatch
+where
+    W: for<'a> tracing_subscriber::fmt::MakeWriter<'a> + Send + Sync + 'static,
+{
+    let filter = filter_fn(|m| m.target() == "umbriel::activity");
+    match output {
+        Export::Human => {
+            Dispatch::new(tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().event_format(Human).with_writer(writer).with_filter(filter)))
+        }
+        Export::Jsonl => Dispatch::new(tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().json().with_writer(writer).with_filter(filter))),
+        Export::Logfmt => {
+            Dispatch::new(tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().event_format(Logfmt).with_writer(writer).with_filter(filter)))
+        }
+    }
+}
+
 /// Original application time and the shared summary; no synthetic export time.
 pub struct Human;
 impl<S, N> FormatEvent<S, N> for Human
@@ -111,13 +136,20 @@ where
 {
     fn format_event(&self, _: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &tracing::Event<'_>) -> fmt::Result {
         #[derive(Default)]
-        struct Fields { time: String, message: String }
+        struct Fields {
+            time: String,
+            message: String,
+        }
         impl Visit for Fields {
             fn record_str(&mut self, field: &Field, value: &str) {
-                if field.name() == "event_time" { self.time = value.into(); }
+                if field.name() == "event_time" {
+                    self.time = value.into();
+                }
             }
             fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-                if field.name() == "message" { self.message = format!("{value:?}"); }
+                if field.name() == "message" {
+                    self.message = format!("{value:?}");
+                }
             }
         }
         let mut fields = Fields::default();

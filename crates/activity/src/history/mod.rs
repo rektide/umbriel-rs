@@ -18,7 +18,12 @@ pub struct Feed {
 }
 impl Default for Feed {
     fn default() -> Self {
-        Self { uid: rustix::process::geteuid().as_raw(), user_unit: Some("umbriel-activity.service".into()), run_id: None, boot_id: None }
+        Self {
+            uid: rustix::process::geteuid().as_raw(),
+            user_unit: Some("umbriel-activity.service".into()),
+            run_id: None,
+            boot_id: None,
+        }
     }
 }
 impl Feed {
@@ -35,7 +40,10 @@ impl Feed {
 /// Cursor identity includes the selection. Never compare opaque strings for order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Cursor { pub feed: Feed, pub opaque: String }
+pub struct Cursor {
+    pub feed: Feed,
+    pub opaque: String,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Delivery {
@@ -47,14 +55,24 @@ pub struct Delivery {
     pub invocation_id: Option<String>,
 }
 #[derive(Debug, Clone)]
-pub struct Entry { pub record: crate::Record, pub delivery: Delivery }
+pub struct Entry {
+    pub record: crate::Record,
+    pub delivery: Delivery,
+}
 #[derive(Debug)]
-pub struct Replay { pub entries: Vec<Entry>, pub upper: Option<Cursor> }
+pub struct Replay {
+    pub entries: Vec<Entry>,
+    pub upper: Option<Cursor>,
+}
 
 /// Initial policy is explicit. Tail includes at most N recent selected records,
 /// not N acceptances, and may begin with metadata whose acceptance was retained out.
 #[derive(Debug, Clone, Copy)]
-pub enum Start { Head, Tail(usize), Since(u64) }
+pub enum Start {
+    Head,
+    Tail(usize),
+    Since(u64),
+}
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     pub max_entries: usize,
@@ -65,7 +83,12 @@ pub struct Limits {
 }
 impl Default for Limits {
     fn default() -> Self {
-        Self { max_entries: 10_000, max_bytes: 32 * 1024 * 1024, max_record_bytes: 1024 * 1024, max_elapsed: Duration::from_secs(5) }
+        Self {
+            max_entries: 10_000,
+            max_bytes: 32 * 1024 * 1024,
+            max_record_bytes: 1024 * 1024,
+            max_elapsed: Duration::from_secs(5),
+        }
     }
 }
 
@@ -75,6 +98,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("invalid journal selection")]
     InvalidFeed,
+    #[error("invalid history range: since must precede until, and the after cursor must be earlier than until")]
+    InvalidRange,
     #[error("cursor belongs to a different selection")]
     CursorFeedMismatch,
     #[error("{0} cursor is missing, malformed, expired, or outside this selection")]
@@ -99,7 +124,10 @@ pub enum Error {
 
 /// Thread-local owning handle. Create and use on the history worker, never move
 /// into an async executor. Read-only: exports cannot select a journal writer.
-pub struct Reader { pub feed: Feed, journal: Journal }
+pub struct Reader {
+    feed: Feed,
+    journal: Journal,
+}
 impl Reader {
     pub fn open(feed: Feed) -> Result<Self, Error> {
         feed.validate()?;
@@ -107,45 +135,68 @@ impl Reader {
         journal.set_data_threshold(0)?;
         journal.match_add("TARGET", b"umbriel::activity".to_vec())?;
         journal.match_add("_UID", feed.uid.to_string().into_bytes())?;
-        if let Some(unit) = &feed.user_unit { journal.match_add("_SYSTEMD_USER_UNIT", unit.as_bytes().to_vec())?; }
-        if let Some(run) = &feed.run_id { journal.match_add("UMBRIEL_RUN_ID", run.as_bytes().to_vec())?; }
-        if let Some(boot) = &feed.boot_id { journal.match_add("_BOOT_ID", boot.as_bytes().to_vec())?; }
+        if let Some(unit) = &feed.user_unit {
+            journal.match_add("_SYSTEMD_USER_UNIT", unit.as_bytes().to_vec())?;
+        }
+        if let Some(run) = &feed.run_id {
+            journal.match_add("UMBRIEL_RUN_ID", run.as_bytes().to_vec())?;
+        }
+        if let Some(boot) = &feed.boot_id {
+            journal.match_add("_BOOT_ID", boot.as_bytes().to_vec())?;
+        }
         Ok(Self { feed, journal })
     }
     pub fn read(&mut self, start: Start, after: Option<&Cursor>, until: Option<u64>, limits: Limits, cancelled: &dyn Fn() -> bool) -> Result<Replay, Error> {
         read::bounded(&mut self.journal, &self.feed, start, after, until, limits, cancelled)
     }
-    /// Short finite wait. Invalidation is a visible failure, not an append wakeup.
-    pub fn wait(&mut self) -> Result<(), Error> {
-        if matches!(self.journal.wait(Some(Duration::from_millis(250)))?, JournalWaitResult::Invalidate) {
-            return Err(Error::Invalidated);
-        }
-        Ok(())
+    /// Short finite wait. `true` reports file-set invalidation, not necessarily
+    /// lost data. The next read must revalidate its exact saved lower cursor.
+    pub fn wait(&mut self) -> Result<bool, Error> {
+        Ok(matches!(self.journal.wait(Some(Duration::from_millis(250)))?, JournalWaitResult::Invalidate))
     }
 }
 
-struct Budget<'a> { limits: Limits, started: Instant, entries: usize, bytes: usize, cancelled: &'a dyn Fn() -> bool }
+struct Budget<'a> {
+    limits: Limits,
+    started: Instant,
+    entries: usize,
+    bytes: usize,
+    cancelled: &'a dyn Fn() -> bool,
+}
 impl Budget<'_> {
     fn check(&self) -> Result<(), Error> {
-        if (self.cancelled)() { return Err(Error::Cancelled); }
-        if self.started.elapsed() >= self.limits.max_elapsed { return Err(Error::Budget("elapsed time")); }
+        if (self.cancelled)() {
+            return Err(Error::Cancelled);
+        }
+        if self.started.elapsed() >= self.limits.max_elapsed {
+            return Err(Error::Budget("elapsed time"));
+        }
         Ok(())
     }
     fn entry(&mut self) -> Result<(), Error> {
         self.check()?;
-        self.entries += 1;
-        if self.entries > self.limits.max_entries { return Err(Error::Budget("entries")); }
+        self.entries = self.entries.checked_add(1).ok_or(Error::Budget("entries"))?;
+        if self.entries > self.limits.max_entries {
+            return Err(Error::Budget("entries"));
+        }
         Ok(())
     }
     fn bytes(&mut self, bytes: usize) -> Result<(), Error> {
         self.check()?;
         self.bytes = self.bytes.checked_add(bytes).ok_or(Error::Budget("bytes"))?;
-        if self.bytes > self.limits.max_bytes { return Err(Error::Budget("bytes")); }
+        if self.bytes > self.limits.max_bytes {
+            return Err(Error::Budget("bytes"));
+        }
         Ok(())
     }
 }
 
-struct Raw { cursor: String, realtime_usec: u64, fields: Vec<(Vec<u8>, Vec<u8>)> }
+#[derive(Clone)]
+struct Raw {
+    cursor: String,
+    realtime_usec: u64,
+    fields: Vec<(Vec<u8>, Vec<u8>)>,
+}
 
 // Private deterministic test seam, not a new generic journal framework.
 trait Access {
@@ -162,15 +213,33 @@ trait Access {
     fn process(&mut self) -> Result<bool, Error>;
 }
 impl Access for Journal {
-    fn head(&mut self) -> Result<(), Error> { Ok(self.seek_head()?) }
-    fn tail(&mut self) -> Result<(), Error> { Ok(self.seek_tail()?) }
-    fn seek(&mut self, cursor: &str) -> Result<(), Error> { Ok(self.seek_cursor(cursor)?) }
-    fn seek_time(&mut self, usec: u64) -> Result<(), Error> { Ok(self.seek_realtime_usec(usec)?) }
-    fn next(&mut self) -> Result<bool, Error> { Ok((**self).next()? != 0) }
-    fn previous(&mut self) -> Result<bool, Error> { Ok((**self).previous()? != 0) }
-    fn test(&self, cursor: &str) -> Result<bool, Error> { Ok(self.test_cursor(cursor)?) }
-    fn cursor(&self) -> Result<String, Error> { Ok((**self).cursor()?) }
-    fn time(&self) -> Result<u64, Error> { Ok(self.timestamp_usec()?) }
+    fn head(&mut self) -> Result<(), Error> {
+        Ok(self.seek_head()?)
+    }
+    fn tail(&mut self) -> Result<(), Error> {
+        Ok(self.seek_tail()?)
+    }
+    fn seek(&mut self, cursor: &str) -> Result<(), Error> {
+        Ok(self.seek_cursor(cursor)?)
+    }
+    fn seek_time(&mut self, usec: u64) -> Result<(), Error> {
+        Ok(self.seek_realtime_usec(usec)?)
+    }
+    fn next(&mut self) -> Result<bool, Error> {
+        Ok((**self).next()? != 0)
+    }
+    fn previous(&mut self) -> Result<bool, Error> {
+        Ok((**self).previous()? != 0)
+    }
+    fn test(&self, cursor: &str) -> Result<bool, Error> {
+        Ok(self.test_cursor(cursor)?)
+    }
+    fn cursor(&self) -> Result<String, Error> {
+        Ok((**self).cursor()?)
+    }
+    fn time(&self) -> Result<u64, Error> {
+        Ok(self.timestamp_usec()?)
+    }
     fn current(&mut self, budget: &mut Budget<'_>) -> Result<Raw, Error> {
         let cursor = self.cursor()?;
         let realtime_usec = self.timestamp_usec()?;
@@ -181,13 +250,22 @@ impl Access for Journal {
             let size = field.data().len();
             budget.bytes(size)?;
             bytes = bytes.checked_add(size).ok_or(Error::Budget("record bytes"))?;
-            if bytes > budget.limits.max_record_bytes { return Err(Error::Budget("record bytes")); }
-            if fields.len() >= 1024 { return Err(Error::Budget("fields per entry")); }
-            fields.push((field.name().to_vec(), field.value().ok_or_else(|| Error::Field("native field".into()))?.to_vec()));
+            if bytes > budget.limits.max_record_bytes {
+                return Err(Error::Budget("record bytes"));
+            }
+            if fields.len() >= 1024 {
+                return Err(Error::Budget("fields per entry"));
+            }
+            fields.push((
+                field.name().to_vec(),
+                field.value().ok_or_else(|| Error::Field("native field".into()))?.to_vec(),
+            ));
         }
         Ok(Raw { cursor, realtime_usec, fields })
     }
-    fn process(&mut self) -> Result<bool, Error> { Ok(matches!((**self).process()?, JournalWaitResult::Invalidate)) }
+    fn process(&mut self) -> Result<bool, Error> {
+        Ok(matches!((**self).process()?, JournalWaitResult::Invalidate))
+    }
 }
 
 #[cfg(test)]
